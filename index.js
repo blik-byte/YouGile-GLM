@@ -62,18 +62,16 @@ app.post('/assistant', async (req, res) => {
 
     // 2. Формируем описание для YouGile
  // 2. Формируем описание с явными переносами строк
+// Замените формирование description на этот блок:
 const description = [
-  "🤖 **AI-анализ:**",
-  "",
-  "📊 **Результат:**",
+  "🤖 <b>AI-анализ:</b>",
+  "📊 <b>Результат:</b>",
   taskData.result || "—",
-  "",
-  "⏱️ **Оценка времени:**",
+  "⏱️ <b>Оценка времени:</b>",
   taskData.estimated_time || "—",
-  "",
-  "📋 **План действий:**",
-  taskData.steps?.map((step, i) => `${i + 1}. ${step}`).join('\n') || "—"
-].join('\n');
+  "📋 <b>План действий:</b>",
+  taskData.steps?.map((step, i) => `${i + 1}. ${step}`).join('<br>') || "—"
+].join('<br><br>');
 
 // Лог для проверки (удалите после отладки)
 console.log('📝 Generated description:\n', description);
