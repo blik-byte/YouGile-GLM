@@ -144,7 +144,7 @@ app.get("/create-task-test", async (req, res) => {
         body: JSON.stringify({
           title: "Тестовая задача от GLM",
           description: "Если ты видишь эту задачу — интеграция работает.",
-          projectId: "1e99dad7-9223-458d-a52a-2605fe83c188"
+          columnId: "c34d4600-b9d8-4e07-ab3b-e2a024cc69d1"
         })
       }
     );
