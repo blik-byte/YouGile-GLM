@@ -20,7 +20,7 @@ app.post('/assistant', async (req, res) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.GLM_API_KEY}`
+        'Authorization': `Bearer ${process.env.ZAI_API_KEY}`
       },
       body: JSON.stringify({
         model: 'glm-4.5-flash',
