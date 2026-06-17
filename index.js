@@ -128,3 +128,37 @@ app.get("/yougile-test", async (req, res) => {
   }
 
 });
+
+app.get("/create-task-test", async (req, res) => {
+
+  try {
+
+    const response = await fetch(
+      "https://rocketup.yougile.com/api-v2/tasks",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.YOUGILE_API_KEY}`
+        },
+        body: JSON.stringify({
+          title: "Тестовая задача от GLM",
+          description: "Если ты видишь эту задачу — интеграция работает.",
+          projectId: "1e99dad7-9223-458d-a52a-2605fe83c188"
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    res.json(data);
+
+  } catch (error) {
+
+    res.status(500).json({
+      error: error.message
+    });
+
+  }
+
+});
