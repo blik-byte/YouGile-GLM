@@ -100,6 +100,21 @@ console.log('📝 Generated description:\n', description);
 
     const taskResult = await yougileResponse.json();
 
+    // 🔍 ВРЕМЕННЫЙ КОД — найдёт ID стикера и выведет в логи
+if (taskResult?.id) {
+  const taskInfo = await fetch(
+    `https://rocketup.yougile.com/api-v2/tasks/${taskResult.id}`,
+    {
+      headers: {
+        'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
+      }
+    }
+  );
+  const fullTask = await taskInfo.json();
+  console.log('🔍 Стикеры в задаче:', JSON.stringify(fullTask.stickers || fullTask.stickerIds || 'не найдено', null, 2));
+  console.log('🔍 Полный ответ (первые 500 символов):', JSON.stringify(fullTask).substring(0, 500));
+}
+
     // 4. Успешный ответ
     console.log(`✅ Task created: "${taskData.title}" → YouGile ID: ${taskResult.id}`);
     res.json({
