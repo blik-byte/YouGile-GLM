@@ -162,3 +162,29 @@ app.get("/create-task-test", async (req, res) => {
   }
 
 });
+app.get("/project-info", async (req, res) => {
+
+  try {
+
+    const response = await fetch(
+      "https://rocketup.yougile.com/api-v2/projects/1e99dad7-9223-458d-a52a-2605fe83c188",
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.YOUGILE_API_KEY}`
+        }
+      }
+    );
+
+    const data = await response.json();
+
+    res.json(data);
+
+  } catch (error) {
+
+    res.status(500).json({
+      error: error.message
+    });
+
+  }
+
+});
