@@ -114,6 +114,9 @@ app.post('/assistant', async (req, res) => {
       throw new Error(`Не удалось распарсить ответ ИИ: ${aiText}`);
     }
 
+// ID вашего стикера (замените на реальный ID)
+const AI_STICKER_ID = 'c553a657-fa54-4532-9d02-4750e013005f'; 
+    
     // 2. Формируем описание для YouGile
  // 2. Формируем описание с явными переносами строк
 // Замените формирование description на этот блок:
@@ -142,7 +145,8 @@ console.log('📝 Generated description:\n', description);
         body: JSON.stringify({
           title: taskData.title,
           description: description, // ← теперь точно с переносами
-          columnId: 'c34d4600-b9d8-4e07-ab3b-e2a024cc69d1'
+          columnId: 'c34d4600-b9d8-4e07-ab3b-e2a024cc69d1',
+          stickerIds: [AI_STICKER_ID] 
         })
       }
     );
