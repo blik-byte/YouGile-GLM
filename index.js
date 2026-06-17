@@ -101,3 +101,30 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server started on ${PORT}`);
 });
+
+app.get("/yougile-test", async (req, res) => {
+
+  try {
+
+    const response = await fetch(
+      "https://rocketup.yougile.com/api-v2/projects",
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.YOUGILE_API_KEY}`
+        }
+      }
+    );
+
+    const data = await response.json();
+
+    res.json(data);
+
+  } catch (error) {
+
+    res.status(500).json({
+      error: error.message
+    });
+
+  }
+
+});
