@@ -89,7 +89,7 @@ console.log('📝 Generated description:\n', description);
         },
         body: JSON.stringify({
           title: taskData.title,
-          description: description,
+          description: description, // ← теперь точно с переносами
           columnId: 'c34d4600-b9d8-4e07-ab3b-e2a024cc69d1'
         })
       }
