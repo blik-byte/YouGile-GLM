@@ -1,29 +1,31 @@
 const express = require("express");
 const cors = require("cors");
-require("dotenv").config();
+const OpenAI = require("openai");
 
-const Anthropic = require("@anthropic-ai/sdk");
+require("dotenv").config();
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
+const client = new OpenAI({
+  apiKey: process.env.ZAI_API_KEY,
+  baseURL: "https://api.z.ai/api/paas/v4"
 });
 
 app.get("/", (req, res) => {
-  res.send("Сервер работает 🚀");
+  res.send("GLM сервер работает 🚀");
 });
 
 app.post("/ai", async (req, res) => {
+
   try {
+
     const userInput = req.body.text;
 
-    const response = await anthropic.messages.create({
-      model: "claude-3-haiku-20240307",
-      max_tokens: 300,
+    const completion = await client.chat.completions.create({
+      model: "glm-4.5-flash",
       messages: [
         {
           role: "user",
@@ -32,24 +34,26 @@ app.post("/ai", async (req, res) => {
       ]
     });
 
-    const aiText = response.content[0].text;
-
     res.json({
       success: true,
-      ai: aiText
+      ai: completion.choices[0].message.content
     });
 
   } catch (error) {
+
     console.error(error);
 
     res.status(500).json({
       success: false,
       error: error.message
     });
+
   }
+
 });
 
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
-  console.log("Server started");
+  console.log(`Server started on ${PORT}`);
 });
