@@ -1,6 +1,8 @@
 // index.js
 require('dotenv').config();
 
+const { ImapFlow } = require("imapflow");
+const { simpleParser } = require("mailparser");
 const express = require('express');
 const cors = require('cors');
 
