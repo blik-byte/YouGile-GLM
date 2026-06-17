@@ -15,8 +15,8 @@ app.post('/assistant', async (req, res) => {
   try {
     const userInput = req.body.text;
 
-    // 1. Прямой запрос к GLM API (Zhipu)
-    const glmResponse = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+    // 1. Запрос к GLM (Z.ai)
+    const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -30,13 +30,12 @@ app.post('/assistant', async (req, res) => {
             content: `Верни ТОЛЬКО JSON без пояснений.
 Формат:
 {
-  "title": "...",
-  "task_type": "...",
-  "result": "...",
-  "estimated_time": "...",
-  "steps": ["...", "...", "..."]
-}
-Сделай название задачи кратким и понятным.`
+  "title": "краткое название задачи",
+  "task_type": "тип",
+  "result": "что получится в итоге",
+  "estimated_time": "оценка времени",
+  "steps": ["шаг 1", "шаг 2", "шаг 3"]
+}`
           },
           { role: 'user', content: userInput }
         ],
@@ -52,20 +51,41 @@ app.post('/assistant', async (req, res) => {
     const glmData = await glmResponse.json();
     const aiText = glmData.choices[0].message.content;
     
-    // Парсим JSON-ответ от модели
-    const taskData = JSON.parse(aiText);
+    // Парсим JSON с защитой от лишнего текста
+    let taskData;
+    try {
+      const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+      taskData = JSON.parse(jsonMatch ? jsonMatch[0] : aiText);
+    } catch (e) {
+      throw new Error(`Не удалось распарсить ответ ИИ: ${aiText}`);
+    }
 
-    // 2. Создаём задачу в YouGile
+    // 2. Формируем описание для YouGile
+    const description = `
+🤖 AI-анализ:
+
+📊 Результат:
+${taskData.result || '—'}
+
+⏱️ Оценка времени:
+${taskData.estimated_time || '—'}
+
+📋 План действий:
+${taskData.steps?.map((step, i) => `${i + 1}. ${step}`).join('\n') || '—'}
+`.trim();
+
+    // 3. Создаём задачу в YouGile
     const yougileResponse = await fetch(
       'https://rocketup.yougile.com/api-v2/tasks',
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
+          'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}` // ← YouGile токен
         },
         body: JSON.stringify({
           title: taskData.title,
+          description: description,
           columnId: 'c34d4600-b9d8-4e07-ab3b-e2a024cc69d1'
         })
       }
@@ -78,7 +98,8 @@ app.post('/assistant', async (req, res) => {
 
     const taskResult = await yougileResponse.json();
 
-    // 3. Успешный ответ
+    // 4. Успешный ответ
+    console.log(`✅ Task created: "${taskData.title}" → YouGile ID: ${taskResult.id}`);
     res.json({
       success: true,
       taskId: taskResult.id,
