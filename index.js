@@ -188,3 +188,67 @@ app.get('/health', (req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
+
+app.get("/check-mail", async (req, res) => {
+
+  try {
+
+    const mailClient = new ImapFlow({
+      host: "imap.mail.ru",
+      port: 993,
+      secure: true,
+      auth: {
+        user: process.env.MAIL_USER,
+        pass: process.env.MAIL_PASSWORD
+      }
+    });
+
+    await mailClient.connect();
+
+    let lock = await mailClient.getMailboxLock("AI");
+
+    try {
+
+      const messages = [];
+
+      for await (let message of mailClient.fetch("1:*", {
+        envelope: true,
+        source: true
+      })) {
+
+        const parsed = await simpleParser(message.source);
+
+        messages.push({
+          subject: parsed.subject,
+          text: parsed.text
+        });
+
+      }
+
+      res.json({
+        success: true,
+        count: messages.length,
+        messages
+      });
+
+    } finally {
+
+      lock.release();
+
+    }
+
+    await mailClient.logout();
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+
+  }
+
+});
+
