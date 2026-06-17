@@ -10,45 +10,59 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 
-// 🔍 Найти ID стикера "Добавлено AI" автоматически
-async function findAiStickerId() {
+// 🔍 Найти ID стикера через задачу
+async function findAiStickerFromTask() {
+  const TASK_ID = '9aef04b1-c8ae-424f-9054-3ad30087c893'; // ← ID задачи, который вы нашли
+  
   try {
-    const response = await fetch('https://rocketup.yougile.com/api-v2/stickers', {
-      headers: {
-        'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
+    const response = await fetch(
+      `https://rocketup.yougile.com/api-v2/tasks/${TASK_ID}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
+        }
       }
-    });
+    );
     
     if (!response.ok) {
-      console.error('❌ Не удалось получить стикеры:', await response.text());
+      console.error('❌ Ошибка получения задачи:', await response.text());
       return null;
     }
     
-    const data = await response.json();
-    console.log('📋 Все стикеры в YouGile:', JSON.stringify(data, null, 2));
+    const task = await response.json();
     
-    // Ищем стикер по названию
-    const stickers = data.stickers || data.items || data;
-    const aiSticker = Array.isArray(stickers) 
-      ? stickers.find(s => s.title === 'Добавлено AI' || s.name === 'Добавлено AI')
-      : null;
+    // Выводим ВСЮ задачу — ищем где стикеры
+    console.log('🔍 ПОЛНАЯ ЗАДАЧА (ищите поле stickers/stickerIds/labels):');
+    console.log(JSON.stringify(task, null, 2));
     
-    if (aiSticker) {
-      console.log(`✅ Найден стикер "Добавлено AI": ${aiSticker.id}`);
-      return aiSticker.id;
-    } else {
-      console.log('❌ Стикер "Добавлено AI" не найден. Посмотрите список выше.');
-      return null;
+    // Пробуем найти стикер в разных возможных полях
+    const stickers = task.stickers || task.stickerIds || task.labels || task.tags;
+    if (stickers && stickers.length > 0) {
+      console.log('✅ Найдены стикеры/метки:', JSON.stringify(stickers, null, 2));
+      
+      // Ищем "Добавлено AI"
+      const aiSticker = stickers.find(s => 
+        s.title === 'Добавлено AI' || 
+        s.name === 'Добавлено AI' ||
+        s === 'Добавлено AI'
+      );
+      
+      if (aiSticker) {
+        const stickerId = typeof aiSticker === 'string' ? aiSticker : aiSticker.id;
+        console.log(`🎯 ID стикера "Добавлено AI": ${stickerId}`);
+        return stickerId;
+      }
     }
+    
+    return null;
   } catch (error) {
-    console.error('❌ Ошибка поиска стикера:', error.message);
+    console.error('❌ Ошибка:', error.message);
     return null;
   }
 }
 
-// Запускаем при старте сервера
-let AI_STICKER_ID = null;
-findAiStickerId().then(id => { AI_STICKER_ID = id; });
+// Запускаем при старте
+findAiStickerFromTask();
 
 // Ваш endpoint
 app.post('/assistant', async (req, res) => {
