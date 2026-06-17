@@ -214,3 +214,43 @@ app.get("/columns", async (req, res) => {
   }
 
 });
+
+app.post("/create-task", async (req, res) => {
+
+  try {
+
+    const taskText = req.body.text;
+
+    const response = await fetch(
+      "https://rocketup.yougile.com/api-v2/tasks",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.YOUGILE_API_KEY}`
+        },
+        body: JSON.stringify({
+          title: taskText,
+          columnId: "c34d4600-b9d8-4e07-ab3b-e2a024cc69d1"
+        })
+      }
+    );
+
+    const data = await response.json();
+
+    res.json({
+      success: true,
+      taskId: data.id
+    });
+
+  } catch (error) {
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+
+  }
+
+});
+
