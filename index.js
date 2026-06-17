@@ -1,35 +1,33 @@
 // index.js
-require('dotenv').config(); // Загружаем .env переменные
+require('dotenv').config();
 
 const express = require('express');
-const { OpenAI } = require('openai'); // GLM работает через OpenAI-совместимый API
+const cors = require('cors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
 app.use(express.json());
+app.use(cors());
 
-// Инициализация клиента для GLM (через OpenRouter или Zhipu)
-const client = new OpenAI({
-  baseURL: process.env.GLM_API_BASE || 'https://openrouter.ai/api/v1', // или https://open.bigmodel.cn/api/paas/v4/
-  apiKey: process.env.GLM_API_KEY,
-});
-
-// 🎯 Ваш endpoint
+// Ваш endpoint
 app.post('/assistant', async (req, res) => {
   try {
     const userInput = req.body.text;
 
-    // 1. Анализируем задачу через GLM
-    const completion = await client.chat.completions.create({
-      model: 'glm-4.5-flash', // или 'openai/gpt-4o-mini' если через OpenRouter
-      messages: [
-        {
-          role: 'system',
-          content: `
-Верни ТОЛЬКО JSON без пояснений.
-
+    // 1. Прямой запрос к GLM API (Zhipu)
+    const glmResponse = await fetch('https://open.bigmodel.cn/api/paas/v4/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.GLM_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'glm-4.5-flash',
+        messages: [
+          {
+            role: 'system',
+            content: `Верни ТОЛЬКО JSON без пояснений.
 Формат:
 {
   "title": "...",
@@ -38,19 +36,27 @@ app.post('/assistant', async (req, res) => {
   "estimated_time": "...",
   "steps": ["...", "...", "..."]
 }
-
 Сделай название задачи кратким и понятным.`
-        },
-        { role: 'user', content: userInput }
-      ],
-      response_format: { type: 'json_object' } // Гарантируем JSON-ответ
+          },
+          { role: 'user', content: userInput }
+        ],
+        response_format: { type: 'json_object' }
+      })
     });
 
-    const aiText = completion.choices[0].message.content;
+    if (!glmResponse.ok) {
+      const errorText = await glmResponse.text();
+      throw new Error(`GLM API error: ${glmResponse.status} - ${errorText}`);
+    }
+
+    const glmData = await glmResponse.json();
+    const aiText = glmData.choices[0].message.content;
+    
+    // Парсим JSON-ответ от модели
     const taskData = JSON.parse(aiText);
 
     // 2. Создаём задачу в YouGile
-    const createTaskResponse = await fetch(
+    const yougileResponse = await fetch(
       'https://rocketup.yougile.com/api-v2/tasks',
       {
         method: 'POST',
@@ -60,19 +66,19 @@ app.post('/assistant', async (req, res) => {
         },
         body: JSON.stringify({
           title: taskData.title,
-          columnId: 'c34d4600-b9d8-4e07-ab3b-e2a024cc69d1' // Ваша колонка
+          columnId: 'c34d4600-b9d8-4e07-ab3b-e2a024cc69d1'
         })
       }
     );
 
-    if (!createTaskResponse.ok) {
-      const errorText = await createTaskResponse.text();
-      throw new Error(`YouGile API error: ${createTaskResponse.status} - ${errorText}`);
+    if (!yougileResponse.ok) {
+      const errorText = await yougileResponse.text();
+      throw new Error(`YouGile API error: ${yougileResponse.status} - ${errorText}`);
     }
 
-    const taskResult = await createTaskResponse.json();
+    const taskResult = await yougileResponse.json();
 
-    // 3. Отправляем успешный ответ
+    // 3. Успешный ответ
     res.json({
       success: true,
       taskId: taskResult.id,
@@ -88,12 +94,12 @@ app.post('/assistant', async (req, res) => {
   }
 });
 
-// 🏓 Health check для Render
+// Health check для Render
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// 🚀 Запуск сервера
+// Запуск сервера — ОБЯЗАТЕЛЬНО
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
