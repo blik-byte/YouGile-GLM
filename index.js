@@ -252,3 +252,117 @@ app.get("/check-mail", async (req, res) => {
 
 });
 
+app.get("/process-mail", async (req, res) => {
+
+  try {
+
+    const mailClient = new ImapFlow({
+      host: "imap.mail.ru",
+      port: 993,
+      secure: true,
+      auth: {
+        user: process.env.MAIL_USER,
+        pass: process.env.MAIL_PASSWORD
+      }
+    });
+
+    await mailClient.connect();
+
+    let lock = await mailClient.getMailboxLock("AI");
+
+    let mailText = "";
+
+    try {
+
+      for await (let message of mailClient.fetch("1:*", {
+        source: true
+      })) {
+
+        const parsed = await simpleParser(message.source);
+
+        mailText += parsed.text + "\n";
+
+      }
+
+    } finally {
+
+      lock.release();
+
+    }
+
+    await mailClient.logout();
+
+    const completion = await client.chat.completions.create({
+      model: "glm-4.5-flash",
+      messages: [
+        {
+          role: "system",
+          content: `
+Разбей текст на отдельные задачи.
+
+Верни ТОЛЬКО JSON.
+
+Формат:
+
+{
+  "tasks": [
+    {
+      "title": "Название задачи"
+    }
+  ]
+}
+`
+        },
+        {
+          role: "user",
+          content: mailText
+        }
+      ]
+    });
+
+    const aiResponse =
+      completion.choices[0].message.content;
+
+    const tasks = JSON.parse(aiResponse);
+
+    const createdTasks = [];
+
+    for (const task of tasks.tasks) {
+
+      const response = await fetch(
+        "https://rocketup.yougile.com/api-v2/tasks",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.YOUGILE_API_KEY}`
+          },
+          body: JSON.stringify({
+            title: task.title,
+            columnId: "c34d4600-b9d8-4e07-ab3b-e2a024cc69d1"
+          })
+        }
+      );
+
+      const data = await response.json();
+
+      createdTasks.push(data.id);
+
+    }
+
+    res.json({
+      success: true,
+      created: createdTasks.length
+    });
+
+  } catch (error) {
+
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+
+  }
+
+});
+
