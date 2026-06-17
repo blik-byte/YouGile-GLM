@@ -61,18 +61,22 @@ app.post('/assistant', async (req, res) => {
     }
 
     // 2. Формируем описание для YouGile
-    const description = `
-🤖 AI-анализ:
+ // 2. Формируем описание с явными переносами строк
+const description = [
+  "🤖 **AI-анализ:**",
+  "",
+  "📊 **Результат:**",
+  taskData.result || "—",
+  "",
+  "⏱️ **Оценка времени:**",
+  taskData.estimated_time || "—",
+  "",
+  "📋 **План действий:**",
+  taskData.steps?.map((step, i) => `${i + 1}. ${step}`).join('\n') || "—"
+].join('\n');
 
-📊 Результат:
-${taskData.result || '—'}
-
-⏱️ Оценка времени:
-${taskData.estimated_time || '—'}
-
-📋 План действий:
-${taskData.steps?.map((step, i) => `${i + 1}. ${step}`).join('\n') || '—'}
-`.trim();
+// Лог для проверки (удалите после отладки)
+console.log('📝 Generated description:\n', description);
 
     // 3. Создаём задачу в YouGile
     const yougileResponse = await fetch(
