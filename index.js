@@ -10,6 +10,46 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 
+// 🔍 Найти ID стикера "Добавлено AI" автоматически
+async function findAiStickerId() {
+  try {
+    const response = await fetch('https://rocketup.yougile.com/api-v2/stickers', {
+      headers: {
+        'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
+      }
+    });
+    
+    if (!response.ok) {
+      console.error('❌ Не удалось получить стикеры:', await response.text());
+      return null;
+    }
+    
+    const data = await response.json();
+    console.log('📋 Все стикеры в YouGile:', JSON.stringify(data, null, 2));
+    
+    // Ищем стикер по названию
+    const stickers = data.stickers || data.items || data;
+    const aiSticker = Array.isArray(stickers) 
+      ? stickers.find(s => s.title === 'Добавлено AI' || s.name === 'Добавлено AI')
+      : null;
+    
+    if (aiSticker) {
+      console.log(`✅ Найден стикер "Добавлено AI": ${aiSticker.id}`);
+      return aiSticker.id;
+    } else {
+      console.log('❌ Стикер "Добавлено AI" не найден. Посмотрите список выше.');
+      return null;
+    }
+  } catch (error) {
+    console.error('❌ Ошибка поиска стикера:', error.message);
+    return null;
+  }
+}
+
+// Запускаем при старте сервера
+let AI_STICKER_ID = null;
+findAiStickerId().then(id => { AI_STICKER_ID = id; });
+
 // Ваш endpoint
 app.post('/assistant', async (req, res) => {
   try {
@@ -99,21 +139,6 @@ console.log('📝 Generated description:\n', description);
     }
 
     const taskResult = await yougileResponse.json();
-
-    // 🔍 ВРЕМЕННЫЙ КОД — найдёт ID стикера и выведет в логи
-if (taskResult?.id) {
-  const taskInfo = await fetch(
-    `https://rocketup.yougile.com/api-v2/tasks/${taskResult.id}`,
-    {
-      headers: {
-        'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
-      }
-    }
-  );
-  const fullTask = await taskInfo.json();
-  console.log('🔍 Стикеры в задаче:', JSON.stringify(fullTask.stickers || fullTask.stickerIds || 'не найдено', null, 2));
-  console.log('🔍 Полный ответ (первые 500 символов):', JSON.stringify(fullTask).substring(0, 500));
-}
 
     // 4. Успешный ответ
     console.log(`✅ Task created: "${taskData.title}" → YouGile ID: ${taskResult.id}`);
