@@ -293,6 +293,15 @@ app.get("/process-mail", async (req, res) => {
     await mailClient.logout();
 
     const completion = await client.chat.completions.create({
+const glmResponse = await fetch(
+  "https://api.z.ai/api/paas/v4/chat/completions",
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.ZAI_API_KEY}`
+    },
+    body: JSON.stringify({
       model: "glm-4.5-flash",
       messages: [
         {
@@ -300,9 +309,7 @@ app.get("/process-mail", async (req, res) => {
           content: `
 Разбей текст на отдельные задачи.
 
-Верни ТОЛЬКО JSON.
-
-Формат:
+Верни только JSON.
 
 {
   "tasks": [
@@ -317,8 +324,18 @@ app.get("/process-mail", async (req, res) => {
           role: "user",
           content: mailText
         }
-      ]
-    });
+      ],
+      response_format: {
+        type: "json_object"
+      }
+    })
+  }
+);
+
+const glmData = await glmResponse.json();
+
+const aiResponse =
+  glmData.choices[0].message.content;
 
     const aiResponse =
       completion.choices[0].message.content;
