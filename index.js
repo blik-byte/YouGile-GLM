@@ -273,15 +273,20 @@ app.get("/process-mail", async (req, res) => {
 
     try {
 
-      for await (let message of mailClient.fetch("1:*", {
-        source: true
-      })) {
+      const processedUids = [];
 
-        const parsed = await simpleParser(message.source);
+for await (let message of mailClient.fetch("1:*", {
+  uid: true,
+  source: true
+})) {
 
-        mailText += parsed.text + "\n";
+  const parsed = await simpleParser(message.source);
 
-      }
+  mailText += parsed.text + "\n";
+
+  processedUids.push(message.uid);
+
+}
 
     } finally {
 
@@ -339,11 +344,11 @@ const aiResponse =
 
     const tasks = JSON.parse(aiResponse);
 
-    const createdTasks = [];
+ const createdTasks = [];
 
-    for (const task of tasks.tasks) {
+for (const task of tasks.tasks) {
 
-      const taskResult = await createYougileTask({
+  const taskResult = await createYougileTask({
     title: task.title,
     result: "Создано из письма",
     estimated_time: "Не определено",
@@ -353,6 +358,31 @@ const aiResponse =
   });
 
   createdTasks.push(taskResult.id);
+
+}
+
+if (processedUids.length > 0) {
+
+  await mailClient.connect();
+
+  const lock2 =
+    await mailClient.getMailboxLock("AI");
+
+  try {
+
+    await mailClient.messageMove(
+      processedUids,
+      "AI_DONE",
+      { uid: true }
+    );
+
+  } finally {
+
+    lock2.release();
+
+  }
+
+  await mailClient.logout();
 
 }
 
