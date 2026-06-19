@@ -84,41 +84,49 @@ async function processMail() {
       if (processedUids.length === 0) return 0;
 
       // GLM анализирует
-      const glmResponse = await fetch(
-        "https://api.z.ai/api/paas/v4/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${process.env.ZAI_API_KEY}`
-          },
-          body: JSON.stringify({
-            model: "glm-4.5-flash",
-            messages: [
-              {
-                role: "system",
-                content: `Разбей текст на отдельные задачи и для каждой задачи верни полное описание.
+ // В email-worker.js или index.js
+const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${process.env.ZAI_API_KEY}`
+  },
+  body: JSON.stringify({
+    model: 'glm-4.5-flash',
+    messages: [
+      {
+        role: 'system',
+        content: `Проанализируй запрос и реши:
+1. Можешь ли ты выполнить эту задачу АВТОНОМНО (используя поиск в интернете, анализ данных)?
+2. Или это задача для человека (требует физических действий, звонков, встреч)?
 
-Верни ТОЛЬКО JSON без пояснений.
+Если можешь выполнить сам:
+- can_execute: true
+- execution_plan: подробный план шагов
+- tools_needed: какие инструменты будешь использовать
 
-Формат:
+Если задача для человека:
+- can_execute: false
+- result: что получится в итоге
+- estimated_time: оценка времени
+- steps: шаги для человека
+
+Верни ТОЛЬКО JSON:
 {
-  "tasks": [
-    {
-      "title": "краткое название задачи",
-      "result": "что получится в итоге",
-      "estimated_time": "оценка времени выполнения",
-      "steps": ["шаг 1", "шаг 2", "шаг 3"]
-    }
-  ]
+  "title": "название задачи",
+  "can_execute": true/false,
+  "execution_plan": "план для AI (если can_execute=true)",
+  "tools_needed": ["web_search", "save_result"],
+  "result": "результат (если can_execute=false)",
+  "estimated_time": "время (если can_execute=false)",
+  "steps": ["шаги (если can_execute=false)"]
 }`
-              },
-              { role: "user", content: mailText }
-            ],
-            response_format: { type: "json_object" }
-          })
-        }
-      );
+      },
+      { role: 'user', content: mailText }
+    ],
+    response_format: { type: 'json_object' }
+  })
+});
 
       if (!glmResponse.ok) {
         throw new Error(`GLM error: ${await glmResponse.text()}`);
