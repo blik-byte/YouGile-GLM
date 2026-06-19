@@ -28,7 +28,7 @@ async function createYougileTask(taskData, columnId = process.env.COLUMN_DEFAULT
       description,
       columnId: columnId,
       stickers: { [AI_STICKER_ID]: "empty" },
-      responsibleId: process.env.YOUGILE_GLM_USER_ID
+      assigned: process.env.YOUGILE_GLM_USER_ID // ← assigned вместо responsibleId
     })
   });
 
@@ -181,7 +181,7 @@ const response = await fetch('https://rocketup.yougile.com/api-v2/tasks', {
     description,
     columnId: process.env.COLUMN_AWAITING_CONFIRMATION,
     stickers: { [AI_STICKER_ID]: "empty" },
-    responsibleId: process.env.YOUGILE_GLM_USER_ID
+    assigned: process.env.YOUGILE_GLM_USER_ID // ← assigned вместо responsibleId
   })
 });
 
