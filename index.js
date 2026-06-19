@@ -238,6 +238,16 @@ app.get("/check-mail", async (req, res) => {
 
     await mailClient.logout();
 
+if (!mailText.trim()) {
+
+  return res.json({
+    success: true,
+    created: 0,
+    message: "Нет новых писем"
+  });
+
+}
+
   } catch (error) {
 
     console.error(error);
