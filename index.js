@@ -270,10 +270,9 @@ app.get("/process-mail", async (req, res) => {
     let lock = await mailClient.getMailboxLock("AI");
 
     let mailText = "";
+    const processedUids = [];
 
-    try {
-
-      const processedUids = [];
+try {
 
 for await (let message of mailClient.fetch("1:*", {
   uid: true,
