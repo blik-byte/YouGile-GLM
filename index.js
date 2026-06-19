@@ -66,6 +66,49 @@ async function findAiStickerFromTask() {
 // Запускаем при старте
 findAiStickerFromTask();
 
+// Создание задачи в YouGile
+async function createYougileTask(taskData) {
+
+  const AI_STICKER_ID =
+    "c553a657-fa54-4532-9d02-4750e013005f";
+
+  const description = [
+    "🤖 <b>AI-анализ:</b>",
+    "📊 <b>Результат:</b>",
+    taskData.result || "—",
+    "⏱️ <b>Оценка времени:</b>",
+    taskData.estimated_time || "—",
+    "📋 <b>План действий:</b>",
+    taskData.steps?.map(
+      (step, i) => `${i + 1}. ${step}`
+    ).join("<br>") || "—"
+  ].join("<br><br>");
+
+  const response = await fetch(
+    "https://rocketup.yougile.com/api-v2/tasks",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization":
+          `Bearer ${process.env.YOUGILE_API_KEY}`
+      },
+      body: JSON.stringify({
+        title: taskData.title,
+        description,
+        columnId:
+          "c34d4600-b9d8-4e07-ab3b-e2a024cc69d1",
+        stickers: {
+          [AI_STICKER_ID]: "empty"
+        }
+      })
+    }
+  );
+
+  return await response.json();
+
+}
+
 // Ваш endpoint
 app.post('/assistant', async (req, res) => {
   try {
@@ -116,51 +159,7 @@ app.post('/assistant', async (req, res) => {
       throw new Error(`Не удалось распарсить ответ ИИ: ${aiText}`);
     }
 
-// ID вашего стикера (замените на реальный ID)
-const AI_STICKER_ID = 'c553a657-fa54-4532-9d02-4750e013005f'; 
-    
-    // 2. Формируем описание для YouGile
- // 2. Формируем описание с явными переносами строк
-// Замените формирование description на этот блок:
-const description = [
-  "🤖 <b>AI-анализ:</b>",
-  "📊 <b>Результат:</b>",
-  taskData.result || "—",
-  "⏱️ <b>Оценка времени:</b>",
-  taskData.estimated_time || "—",
-  "📋 <b>План действий:</b>",
-  taskData.steps?.map((step, i) => `${i + 1}. ${step}`).join('<br>') || "—"
-].join('<br><br>');
-
-// Лог для проверки (удалите после отладки)
-console.log('📝 Generated description:\n', description);
-
-    // 3. Создаём задачу в YouGile
-    const yougileResponse = await fetch(
-      'https://rocketup.yougile.com/api-v2/tasks',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}` // ← YouGile токен
-        },
-        body: JSON.stringify({
-          title: taskData.title,
-          description: description, // ← теперь точно с переносами
-          columnId: 'c34d4600-b9d8-4e07-ab3b-e2a024cc69d1',
-          stickers: {
-            [AI_STICKER_ID]: "empty"  // ← объект, не массив!
-            }
-        })
-      }
-    );
-
-    if (!yougileResponse.ok) {
-      const errorText = await yougileResponse.text();
-      throw new Error(`YouGile API error: ${yougileResponse.status} - ${errorText}`);
-    }
-
-    const taskResult = await yougileResponse.json();
+    const taskResult = await createYougileTask(taskData);
 
     // 4. Успешный ответ
     console.log(`✅ Task created: "${taskData.title}" → YouGile ID: ${taskResult.id}`);
@@ -344,26 +343,18 @@ const aiResponse =
 
     for (const task of tasks.tasks) {
 
-      const response = await fetch(
-        "https://rocketup.yougile.com/api-v2/tasks",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${process.env.YOUGILE_API_KEY}`
-          },
-          body: JSON.stringify({
-            title: task.title,
-            columnId: "c34d4600-b9d8-4e07-ab3b-e2a024cc69d1"
-          })
-        }
-      );
+      const taskResult = await createYougileTask({
+    title: task.title,
+    result: "Создано из письма",
+    estimated_time: "Не определено",
+    steps: [
+      "Проверить задачу"
+    ]
+  });
 
-      const data = await response.json();
+  createdTasks.push(taskResult.id);
 
-      createdTasks.push(data.id);
-
-    }
+});
 
     res.json({
       success: true,
