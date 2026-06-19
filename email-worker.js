@@ -225,3 +225,15 @@ async function startEmailWorker() {
     try {
       await processMail();
     } catch (e) {
+      console.error("❌ Polling error:", e);
+    }
+  }, 2 * 60 * 1000);
+
+  // IDLE в фоне
+  runIdleLoop().catch(e => console.error("IDLE loop crashed:", e));
+
+  // Первая проверка сразу
+  await processMail();
+}
+
+module.exports = { startEmailWorker, processMail, createYougileTask };
