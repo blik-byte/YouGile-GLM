@@ -252,6 +252,29 @@ app.get("/check-mail", async (req, res) => {
 });
 
 app.get("/process-mail", async (req, res) => {
+  try {
+    const created = await processMail();
+    res.json({ success: true, created });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// email-worker.js — автоматическая проверка почты
+
+const { ImapFlow } = require("imapflow");
+const { simpleParser } = require("mailparser");
+
+let isProcessing = false; // защита от параллельных запусков
+
+// Основная функция обработки почты
+async function processMail() {
+  if (isProcessing) {
+    console.log("⏳ Уже идёт обработка, пропускаем");
+    return;
+  }
+
+  isProcessing = true;
   const mailClient = new ImapFlow({
     host: "imap.mail.ru",
     port: 993,
@@ -269,16 +292,12 @@ app.get("/process-mail", async (req, res) => {
     let lock = await mailClient.getMailboxLock("AI");
     
     try {
-      // Ищем только НЕПРОЧИТАННЫЕ письма
+      // Ищем непрочитанные
       const range = await mailClient.search({ seen: false });
       
       if (range.length === 0) {
-        console.log("📭 Нет новых непрочитанных писем");
-        return res.json({
-          success: true,
-          created: 0,
-          message: "Нет новых непрочитанных писем"
-        });
+        console.log("📭 Нет новых писем");
+        return 0;
       }
 
       console.log(`📬 Найдено ${range.length} непрочитанных писем`);
@@ -286,7 +305,6 @@ app.get("/process-mail", async (req, res) => {
       let mailText = "";
       const processedUids = [];
 
-      // Обрабатываем только непрочитанные
       for await (let message of mailClient.fetch(range, {
         uid: true,
         source: true
@@ -296,13 +314,7 @@ app.get("/process-mail", async (req, res) => {
         processedUids.push(message.uid);
       }
 
-      if (processedUids.length === 0) {
-        return res.json({
-          success: true,
-          created: 0,
-          message: "Нет писем для обработки"
-        });
-      }
+      if (processedUids.length === 0) return 0;
 
       // GLM анализирует
       const glmResponse = await fetch(
@@ -334,14 +346,9 @@ app.get("/process-mail", async (req, res) => {
   ]
 }`
               },
-              {
-                role: "user",
-                content: mailText
-              }
+              { role: "user", content: mailText }
             ],
-            response_format: {
-              type: "json_object"
-            }
+            response_format: { type: "json_object" }
           })
         }
       );
@@ -375,24 +382,19 @@ app.get("/process-mail", async (req, res) => {
         createdTasks.push(taskResult.id);
       }
 
-      // Помечаем письма как прочитанные (вместо перемещения)
+      // Помечаем как прочитанные
       await mailClient.messageFlagsAdd(processedUids, ["\\Seen"], { uid: true });
-      console.log(`✅ Помечено ${processedUids.length} писем как прочитанные`);
 
-      // Опционально: перемещаем в AI_DONE
+      // Перемещаем в AI_DONE
       try {
         await mailClient.messageMove(processedUids, "AI_DONE", { uid: true });
         console.log(`📁 Перемещено в AI_DONE`);
       } catch (moveErr) {
-        console.warn("⚠️ Не удалось переместить письма:", moveErr.message);
-        // Продолжаем, даже если перемещение не сработало
+        console.warn("⚠️ Не удалось переместить:", moveErr.message);
       }
 
-      res.json({
-        success: true,
-        created: createdTasks.length,
-        processed: processedUids.length
-      });
+      console.log(`✅ Создано ${createdTasks.length} задач`);
+      return createdTasks.length;
 
     } finally {
       lock.release();
@@ -400,17 +402,87 @@ app.get("/process-mail", async (req, res) => {
 
   } catch (error) {
     console.error("❌ Process mail error:", error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
   } finally {
-    // Закрываем соединение ТОЛЬКО после завершения всех операций
     try {
       await mailClient.logout();
-      console.log("✅ IMAP отключен");
+    } catch (e) {}
+    isProcessing = false;
+  }
+}
+
+// 🚀 Запуск с IDLE + polling fallback
+async function startEmailWorker() {
+  console.log("📧 Email worker запущен (IDLE + polling fallback)");
+
+  // Polling каждые 2 минуты (fallback)
+  setInterval(async () => {
+    try {
+      await processMail();
     } catch (e) {
-      // Игнорируем ошибки при закрытии
+      console.error("❌ Polling error:", e);
+    }
+  }, 2 * 60 * 1000);
+
+  // IDLE — мгновенная реакция
+  async function runIdleLoop() {
+    while (true) {
+      const mailClient = new ImapFlow({
+        host: "imap.mail.ru",
+        port: 993,
+        secure: true,
+        auth: {
+          user: process.env.MAIL_USER,
+          pass: process.env.MAIL_PASSWORD
+        }
+      });
+
+      try {
+        await mailClient.connect();
+        const lock = await mailClient.getMailboxLock("AI");
+
+        console.log("👂 IDLE: слушаю новые письма...");
+
+        // Ждём новое письмо (или 25 минут — таймаут)
+        await new Promise((resolve) => {
+          mailClient.on("exists", async (data) => {
+            console.log(`🔔 Новое письмо! (${data.path})`);
+            resolve();
+          });
+
+          // Таймаут 25 минут (IMAP обычно обрывает через 30)
+          setTimeout(resolve, 25 * 60 * 1000);
+        });
+
+        lock.release();
+        await mailClient.logout();
+
+        // Обрабатываем новое письмо
+        await processMail();
+
+      } catch (e) {
+        console.error("❌ IDLE error:", e.message);
+        try { await mailClient.logout(); } catch (_) {}
+      }
+
+      // Пауза перед переподключением
+      await new Promise(r => setTimeout(r, 5000));
     }
   }
+
+  // Запускаем IDLE в фоне
+  runIdleLoop().catch(e => console.error("IDLE loop crashed:", e));
+
+  // Первая проверка сразу
+  await processMail();
+}
+
+// Экспортируем для использования в index.js
+module.exports = { startEmailWorker, processMail };
+
+const { startEmailWorker } = require('./email-worker');
+
+// Запускаем после старта сервера
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+  startEmailWorker(); // ← запускаем email worker
 });
