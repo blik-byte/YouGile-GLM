@@ -3,11 +3,10 @@ const { ImapFlow } = require("imapflow");
 const { simpleParser } = require("mailparser");
 
 let isProcessing = false;
+const AI_STICKER_ID = "c553a657-fa54-4532-9d02-4750e013005f";
 
-// Функция создания задачи (вынесена сюда, чтобы не зависеть от index.js)
-async function createYougileTask(taskData) {
-  const AI_STICKER_ID = "c553a657-fa54-4532-9d02-4750e013005f";
-
+// Функция создания задачи
+async function createYougileTask(taskData, columnId = process.env.COLUMN_DEFAULT) {
   const description = [
     "🤖 <b>AI-анализ:</b>",
     "📊 <b>Результат:</b>",
@@ -22,14 +21,13 @@ async function createYougileTask(taskData) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.YOUGILE_API_KEY}` // ← мой токен
+      "Authorization": `Bearer ${process.env.YOUGILE_API_KEY}`
     },
     body: JSON.stringify({
       title: taskData.title,
       description,
-      columnId: "c34d4600-b9d8-4e07-ab3b-e2a024cc69d1",
+      columnId: columnId,
       stickers: { [AI_STICKER_ID]: "empty" },
-      // Опционально: назначаем GLM исполнителем
       responsibleId: process.env.YOUGILE_GLM_USER_ID
     })
   });
@@ -86,18 +84,18 @@ async function processMail() {
       if (processedUids.length === 0) return 0;
 
       // GLM анализирует
-  const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${process.env.ZAI_API_KEY}`
-  },
-  body: JSON.stringify({
-    model: 'glm-4.5-flash',
-    messages: [
-      {
-        role: 'system',
-        content: `Проанализируй запрос и реши:
+      const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.ZAI_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'glm-4.5-flash',
+          messages: [
+            {
+              role: 'system',
+              content: `Проанализируй запрос и реши:
 1. Можешь ли ты выполнить эту задачу АВТОНОМНО (используя поиск в интернете, анализ данных)?
 2. Или это задача для человека (требует физических действий, звонков, встреч)?
 
@@ -122,47 +120,12 @@ async function processMail() {
   "estimated_time": "время (если can_execute=false)",
   "steps": ["шаги (если can_execute=false)"]
 }`
-      },
-      { role: 'user', content: mailText }
-    ],
-    response_format: { type: 'json_object' }
-  })
-});
-
-      // В email-worker.js
-const taskData = JSON.parse(glmData.choices[0].message.content);
-
-if (taskData.can_execute) {
-  // Создаём задачу в колонке "Ожидает подтверждения"
-  const description = [
-    "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
-    "",
-    "<b>📋 План выполнения:</b>",
-    taskData.execution_plan,
-    "",
-    "<b>🔧 Инструменты:</b>",
-    taskData.tools_needed?.join(', ') || 'web_search',
-    "",
-    "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
-  ].join('<br><br>');
-
-  await fetch('https://rocketup.yougile.com/api-v2/tasks', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
-    },
-    body: JSON.stringify({
-      title: taskData.title,
-      description,
-      columnId: 'ID_COLUMN_AWAITING_CONFIRMATION', // колонка "Ожидает подтверждения"
-      stickers: { [AI_STICKER_ID]: 'empty' }
-    })
-  });
-} else {
-  // Обычная задача для человека
-  await createYougileTask(taskData);
-}
+            },
+            { role: 'user', content: mailText }
+          ],
+          response_format: { type: 'json_object' }
+        })
+      });
 
       if (!glmResponse.ok) {
         throw new Error(`GLM error: ${await glmResponse.text()}`);
@@ -171,25 +134,61 @@ if (taskData.can_execute) {
       const glmData = await glmResponse.json();
       const aiResponse = glmData.choices[0].message.content;
 
-      let tasks;
+      let taskData;
       try {
         const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-        tasks = JSON.parse(jsonMatch ? jsonMatch[0] : aiResponse);
+        taskData = JSON.parse(jsonMatch ? jsonMatch[0] : aiResponse);
       } catch (e) {
         throw new Error(`Не удалось распарсить GLM: ${aiResponse}`);
       }
 
-      console.log(`🤖 GLM вернул ${tasks.tasks.length} задач`);
+      console.log(`🤖 GLM вернул задачу: "${taskData.title}" (can_execute: ${taskData.can_execute})`);
 
       const createdTasks = [];
-      for (const task of tasks.tasks) {
+
+      if (taskData.can_execute) {
+        // Задача для AI-агента — создаём в колонке "Ожидает подтверждения"
+        const description = [
+          "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
+          "",
+          "<b>📋 План выполнения:</b>",
+          taskData.execution_plan || "Не указан",
+          "",
+          "<b>🔧 Инструменты:</b>",
+          taskData.tools_needed?.join(', ') || 'web_search',
+          "",
+          "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
+        ].join('<br><br>');
+
+        const response = await fetch('https://rocketup.yougile.com/api-v2/tasks', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
+          },
+          body: JSON.stringify({
+            title: taskData.title,
+            description,
+            columnId: process.env.COLUMN_AWAITING_CONFIRMATION,
+            stickers: { [AI_STICKER_ID]: "empty" },
+            responsibleId: process.env.YOUGILE_GLM_USER_ID
+          })
+        });
+
+        const taskResult = await response.json();
+        createdTasks.push(taskResult.id);
+        console.log(`✅ Задача для AI создана: ${taskResult.id}`);
+
+      } else {
+        // Обычная задача для человека
         const taskResult = await createYougileTask({
-          title: task.title,
-          result: task.result || "Не указано",
-          estimated_time: task.estimated_time || "Не указано",
-          steps: task.steps || ["Уточнить план"]
+          title: taskData.title,
+          result: taskData.result || "Не указано",
+          estimated_time: taskData.estimated_time || "Не указано",
+          steps: taskData.steps || ["Уточнить план"]
         });
         createdTasks.push(taskResult.id);
+        console.log(`✅ Задача для человека создана: ${taskResult.id}`);
       }
 
       await mailClient.messageFlagsAdd(processedUids, ["\\Seen"], { uid: true });
