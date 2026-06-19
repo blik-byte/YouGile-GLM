@@ -68,6 +68,49 @@ async function findAiStickerFromTask() {
 // Запускаем при старте
 findAiStickerFromTask();
 
+
+
+// В index.js
+app.get('/find-glm-user', async (req, res) => {
+  try {
+    // Получаем список задач (первые 50)
+    const response = await fetch(
+      'https://rocketup.yougile.com/api-v2/tasks?limit=50',
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
+        }
+      }
+    );
+    
+    const data = await response.json();
+    
+    // Ищем задачи, где исполнитель — GLM-аккаунт
+    const glmUsers = new Map();
+    
+    for (const task of data.items || []) {
+      if (task.responsible && task.responsible.email?.includes('ai.assistant')) {
+        glmUsers.set(task.responsible.id, {
+          id: task.responsible.id,
+          name: task.responsible.name,
+          email: task.responsible.email
+        });
+      }
+    }
+    
+    res.json({
+      success: true,
+      glmUsers: Array.from(glmUsers.values())
+    });
+    
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
+
+
 // Ваш endpoint
 app.post('/assistant', async (req, res) => {
   try {
