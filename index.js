@@ -252,24 +252,42 @@ app.get("/check-mail", async (req, res) => {
 });
 
 app.get("/process-mail", async (req, res) => {
+  const mailClient = new ImapFlow({
+    host: "imap.mail.ru",
+    port: 993,
+    secure: true,
+    auth: {
+      user: process.env.MAIL_USER,
+      pass: process.env.MAIL_PASSWORD
+    }
+  });
+
   try {
-    const mailClient = new ImapFlow({
-      host: "imap.mail.ru",
-      port: 993,
-      secure: true,
-      auth: {
-        user: process.env.MAIL_USER,
-        pass: process.env.MAIL_PASSWORD
-      }
-    });
-
     await mailClient.connect();
-    let lock = await mailClient.getMailboxLock("AI");
-    let mailText = "";
-    const processedUids = [];
+    console.log("✅ IMAP подключен");
 
+    let lock = await mailClient.getMailboxLock("AI");
+    
     try {
-      for await (let message of mailClient.fetch("1:*", {
+      // Ищем только НЕПРОЧИТАННЫЕ письма
+      const range = await mailClient.search({ seen: false });
+      
+      if (range.length === 0) {
+        console.log("📭 Нет новых непрочитанных писем");
+        return res.json({
+          success: true,
+          created: 0,
+          message: "Нет новых непрочитанных писем"
+        });
+      }
+
+      console.log(`📬 Найдено ${range.length} непрочитанных писем`);
+
+      let mailText = "";
+      const processedUids = [];
+
+      // Обрабатываем только непрочитанные
+      for await (let message of mailClient.fetch(range, {
         uid: true,
         source: true
       })) {
@@ -277,35 +295,30 @@ app.get("/process-mail", async (req, res) => {
         mailText += (parsed.text || "").trim() + "\n";
         processedUids.push(message.uid);
       }
-    } finally {
-      lock.release();
-    }
 
-    await mailClient.logout();
+      if (processedUids.length === 0) {
+        return res.json({
+          success: true,
+          created: 0,
+          message: "Нет писем для обработки"
+        });
+      }
 
-    if (processedUids.length === 0) {
-      return res.json({
-        success: true,
-        created: 0,
-        message: "Нет новых писем"
-      });
-    }
-
-    // GLM анализирует и возвращает полное описание
-    const glmResponse = await fetch(
-      "https://api.z.ai/api/paas/v4/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.ZAI_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: "glm-4.5-flash",
-          messages: [
-            {
-              role: "system",
-              content: `Разбей текст на отдельные задачи и для каждой задачи верни полное описание.
+      // GLM анализирует
+      const glmResponse = await fetch(
+        "https://api.z.ai/api/paas/v4/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.ZAI_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: "glm-4.5-flash",
+            messages: [
+              {
+                role: "system",
+                content: `Разбей текст на отдельные задачи и для каждой задачи верни полное описание.
 
 Верни ТОЛЬКО JSON без пояснений.
 
@@ -320,68 +333,70 @@ app.get("/process-mail", async (req, res) => {
     }
   ]
 }`
-            },
-            {
-              role: "user",
-              content: mailText
+              },
+              {
+                role: "user",
+                content: mailText
+              }
+            ],
+            response_format: {
+              type: "json_object"
             }
-          ],
-          response_format: {
-            type: "json_object"
-          }
-        })
+          })
+        }
+      );
+
+      if (!glmResponse.ok) {
+        throw new Error(`GLM error: ${await glmResponse.text()}`);
       }
-    );
 
-    if (!glmResponse.ok) {
-      throw new Error(await glmResponse.text());
-    }
+      const glmData = await glmResponse.json();
+      const aiResponse = glmData.choices[0].message.content;
 
-    const glmData = await glmResponse.json();
-    const aiResponse = glmData.choices[0].message.content;
+      let tasks;
+      try {
+        const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+        tasks = JSON.parse(jsonMatch ? jsonMatch[0] : aiResponse);
+      } catch (e) {
+        throw new Error(`Не удалось распарсить GLM: ${aiResponse}`);
+      }
 
-    let tasks;
-    try {
-      const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-      tasks = JSON.parse(jsonMatch ? jsonMatch[0] : aiResponse);
-    } catch (e) {
-      throw new Error(`Не удалось распарсить ответ GLM: ${aiResponse}`);
-    }
+      console.log(`🤖 GLM вернул ${tasks.tasks.length} задач`);
 
-    console.log(`🤖 GLM вернул ${tasks.tasks.length} задач:`);
-    tasks.tasks.forEach((t, i) => {
-      console.log(`  ${i + 1}. ${t.title} (${t.estimated_time})`);
-    });
+      // Создаём задачи
+      const createdTasks = [];
+      for (const task of tasks.tasks) {
+        const taskResult = await createYougileTask({
+          title: task.title,
+          result: task.result || "Не указано",
+          estimated_time: task.estimated_time || "Не указано",
+          steps: task.steps || ["Уточнить план"]
+        });
+        createdTasks.push(taskResult.id);
+      }
 
-    const createdTasks = [];
+      // Помечаем письма как прочитанные (вместо перемещения)
+      await mailClient.messageFlagsAdd(processedUids, ["\\Seen"], { uid: true });
+      console.log(`✅ Помечено ${processedUids.length} писем как прочитанные`);
 
-    for (const task of tasks.tasks) {
-      const taskResult = await createYougileTask({
-        title: task.title,
-        result: task.result || "Не указано",
-        estimated_time: task.estimated_time || "Не указано",
-        steps: task.steps || ["Уточнить план"]
-      });
-
-      createdTasks.push(taskResult.id);
-    }
-
-    // Перемещаем обработанные письма в AI_DONE
-    if (processedUids.length > 0) {
-      const lock2 = await mailClient.getMailboxLock("AI");
+      // Опционально: перемещаем в AI_DONE
       try {
         await mailClient.messageMove(processedUids, "AI_DONE", { uid: true });
-      } finally {
-        lock2.release();
+        console.log(`📁 Перемещено в AI_DONE`);
+      } catch (moveErr) {
+        console.warn("⚠️ Не удалось переместить письма:", moveErr.message);
+        // Продолжаем, даже если перемещение не сработало
       }
+
+      res.json({
+        success: true,
+        created: createdTasks.length,
+        processed: processedUids.length
+      });
+
+    } finally {
+      lock.release();
     }
-
-    await mailClient.logout();
-
-    res.json({
-      success: true,
-      created: createdTasks.length
-    });
 
   } catch (error) {
     console.error("❌ Process mail error:", error);
@@ -389,5 +404,13 @@ app.get("/process-mail", async (req, res) => {
       success: false,
       error: error.message
     });
+  } finally {
+    // Закрываем соединение ТОЛЬКО после завершения всех операций
+    try {
+      await mailClient.logout();
+      console.log("✅ IMAP отключен");
+    } catch (e) {
+      // Игнорируем ошибки при закрытии
+    }
   }
 });
