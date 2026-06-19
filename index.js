@@ -293,8 +293,6 @@ for await (let message of mailClient.fetch("1:*", {
 
     }
 
-    await mailClient.logout();
-
 const glmResponse = await fetch(
   "https://api.z.ai/api/paas/v4/chat/completions",
   {
@@ -362,8 +360,6 @@ for (const task of tasks.tasks) {
 
 if (processedUids.length > 0) {
 
-  await mailClient.connect();
-
   const lock2 =
     await mailClient.getMailboxLock("AI");
 
@@ -381,9 +377,9 @@ if (processedUids.length > 0) {
 
   }
 
-  await mailClient.logout();
-
 }
+
+    await mailClient.logout();
 
     res.json({
       success: true,
