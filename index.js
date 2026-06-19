@@ -14,62 +14,6 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 
-// 🔍 Найти ID стикера через задачу
-async function findAiStickerFromTask() {
-  const TASK_ID = '9aef04b1-c8ae-424f-9054-3ad30087c893'; // ← ID задачи, который вы нашли
-  
-  try {
-    const response = await fetch(
-      `https://rocketup.yougile.com/api-v2/tasks/${TASK_ID}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
-        }
-      }
-    );
-    
-    if (!response.ok) {
-      console.error('❌ Ошибка получения задачи:', await response.text());
-      return null;
-    }
-    
-    const task = await response.json();
-    
-    // Выводим ВСЮ задачу — ищем где стикеры
-    console.log('🔍 ПОЛНАЯ ЗАДАЧА (ищите поле stickers/stickerIds/labels):');
-    console.log(JSON.stringify(task, null, 2));
-    
-    // Пробуем найти стикер в разных возможных полях
-    const stickers = task.stickers || task.stickerIds || task.labels || task.tags;
-    if (stickers && stickers.length > 0) {
-      console.log('✅ Найдены стикеры/метки:', JSON.stringify(stickers, null, 2));
-      
-      // Ищем "Добавлено AI"
-      const aiSticker = stickers.find(s => 
-        s.title === 'Добавлено AI' || 
-        s.name === 'Добавлено AI' ||
-        s === 'Добавлено AI'
-      );
-      
-      if (aiSticker) {
-        const stickerId = typeof aiSticker === 'string' ? aiSticker : aiSticker.id;
-        console.log(`🎯 ID стикера "Добавлено AI": ${stickerId}`);
-        return stickerId;
-      }
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('❌ Ошибка:', error.message);
-    return null;
-  }
-}
-
-// Запускаем при старте
-findAiStickerFromTask();
-
-
-
 // В index.js
 app.get('/find-glm-user', async (req, res) => {
   try {
