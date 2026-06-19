@@ -22,7 +22,7 @@ async function createYougileTask(taskData) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.YOUGILE_GLM_API_KEY}` // ← токен GLM
+      "Authorization": `Bearer ${process.env.YOUGILE_API_KEY}` // ← мой токен
     },
     body: JSON.stringify({
       title: taskData.title,
