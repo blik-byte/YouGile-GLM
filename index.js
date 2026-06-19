@@ -6,6 +6,7 @@ const cors = require('cors');
 
 // ✅ Импортируем worker из отдельного файла
 const { startEmailWorker, processMail } = require('./email-worker');
+const { connectToMongo } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -150,8 +151,20 @@ app.get("/process-mail", async (req, res) => {
   }
 });
 
-// Запускаем после старта сервера
-app.listen(PORT, () => {
+// Просмотр статистики
+app.get('/stats', async (req, res) => {
+  try {
+    const stats = await getStats();
+    res.json({ success: true, stats });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// При старте сервера
+app.listen(PORT, async () => {
   console.log(`✅ Server running on port ${PORT}`);
-  startEmailWorker(); // ← запускаем email worker
+  await connectToMongo(); // подключаем MongoDB
+  startEmailWorker();
+  startTaskExecutorWorker();
 });
