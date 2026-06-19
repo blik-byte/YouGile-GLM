@@ -4,9 +4,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
-// ✅ Импортируем worker из отдельного файла
-const { startEmailWorker, processMail } = require('./email-worker');
-const { connectToMongo } = require('./db');
+// ✅ Импорты (каждый ОДИН раз!)
+const { startEmailWorker, processMail, createYougileTask } = require('./email-worker');
+const { connectToMongo, getStats } = require('./db');
 const { startTaskExecutorWorker } = require('./task-executor-worker');
 
 const app = express();
@@ -15,10 +15,9 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 
-// В index.js
+// 🔍 Поиск GLM-пользователя (можно удалить после настройки)
 app.get('/find-glm-user', async (req, res) => {
   try {
-    // Получаем список задач (первые 50)
     const response = await fetch(
       'https://rocketup.yougile.com/api-v2/tasks?limit=50',
       {
@@ -29,8 +28,6 @@ app.get('/find-glm-user', async (req, res) => {
     );
     
     const data = await response.json();
-    
-    // Ищем задачи, где исполнитель — GLM-аккаунт
     const glmUsers = new Map();
     
     for (const task of data.items || []) {
@@ -53,15 +50,11 @@ app.get('/find-glm-user', async (req, res) => {
   }
 });
 
-
-
-
-// Ваш endpoint
+// 🔧 Создание задачи из текста
 app.post('/assistant', async (req, res) => {
   try {
     const userInput = req.body.text;
 
-    // 1. Запрос к GLM (Z.ai)
     const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
       method: 'POST',
       headers: {
@@ -97,7 +90,6 @@ app.post('/assistant', async (req, res) => {
     const glmData = await glmResponse.json();
     const aiText = glmData.choices[0].message.content;
     
-    // Парсим JSON с защитой от лишнего текста
     let taskData;
     try {
       const jsonMatch = aiText.match(/\{[\s\S]*\}/);
@@ -108,7 +100,6 @@ app.post('/assistant', async (req, res) => {
 
     const taskResult = await createYougileTask(taskData);
 
-    // 4. Успешный ответ
     console.log(`✅ Task created: "${taskData.title}" → YouGile ID: ${taskResult.id}`);
     res.json({
       success: true,
@@ -125,12 +116,8 @@ app.post('/assistant', async (req, res) => {
   }
 });
 
-// Health check для Render
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-app.get("/process-mail", async (req, res) => {
+// 📧 Ручной запуск обработки почты
+app.get('/process-mail', async (req, res) => {
   try {
     const created = await processMail();
     res.json({ success: true, created });
@@ -139,18 +126,7 @@ app.get("/process-mail", async (req, res) => {
   }
 });
 
-// Просмотр статистики
-app.get('/stats', async (req, res) => {
-  try {
-    const stats = await getStats();
-    res.json({ success: true, stats });
-  } catch (e) {
-    res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-const { getStats, connectToMongo } = require('./db');
-
+// 🗄️ Проверка MongoDB
 app.get('/db-check', async (req, res) => {
   try {
     await connectToMongo();
@@ -161,10 +137,25 @@ app.get('/db-check', async (req, res) => {
   }
 });
 
-// При старте сервера
+// 📊 Статистика
+app.get('/stats', async (req, res) => {
+  try {
+    const stats = await getStats();
+    res.json({ success: true, stats });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// 🏓 Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// 🚀 Запуск сервера + workers
 app.listen(PORT, async () => {
   console.log(`✅ Server running on port ${PORT}`);
-  await connectToMongo(); // подключаем MongoDB
+  await connectToMongo();
   startEmailWorker();
   startTaskExecutorWorker();
 });
