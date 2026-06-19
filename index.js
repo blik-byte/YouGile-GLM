@@ -238,16 +238,6 @@ app.get("/check-mail", async (req, res) => {
 
     await mailClient.logout();
 
-if (!mailText.trim()) {
-
-  return res.json({
-    success: true,
-    created: 0,
-    message: "Нет новых писем"
-  });
-
-}
-
   } catch (error) {
 
     console.error(error);
@@ -291,7 +281,7 @@ for await (let message of mailClient.fetch("1:*", {
 
   const parsed = await simpleParser(message.source);
 
-  mailText += parsed.text + "\n";
+  mailText += (parsed.text || "").trim() + "\n";
 
   processedUids.push(message.uid);
 
@@ -302,6 +292,18 @@ for await (let message of mailClient.fetch("1:*", {
       lock.release();
 
     }
+
+await mailClient.logout();
+
+if (processedUids.length === 0) {
+
+  return res.json({
+    success: true,
+    created: 0,
+    message: "Нет новых писем"
+  });
+
+}
 
 const glmResponse = await fetch(
   "https://api.z.ai/api/paas/v4/chat/completions",
