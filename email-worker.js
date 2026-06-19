@@ -169,6 +169,22 @@ console.log(`🤖 Полный ответ GLM:`, JSON.stringify(taskData, null, 
         console.log(`🔧 Отправляю задачу в YouGile...`);
 console.log(`🔧 columnId: "${process.env.COLUMN_AWAITING_CONFIRMATION}"`);
 console.log(`🔧 title: "${taskData.title}"`);
+console.log(`🔧 YOUGILE_GLM_USER_ID: "${process.env.YOUGILE_GLM_USER_ID}"`);
+
+const taskPayload = {
+  title: taskData.title,
+  description,
+  columnId: process.env.COLUMN_AWAITING_CONFIRMATION,
+  stickers: { [AI_STICKER_ID]: "empty" }
+};
+
+// Добавляем assigned только если YOUGILE_GLM_USER_ID установлен
+if (process.env.YOUGILE_GLM_USER_ID) {
+  taskPayload.assigned = [process.env.YOUGILE_GLM_USER_ID];
+  console.log(`🔧 assigned: [${process.env.YOUGILE_GLM_USER_ID}]`);
+} else {
+  console.warn(`⚠️ YOUGILE_GLM_USER_ID не установлен, задача будет без исполнителя`);
+}
 
 const response = await fetch('https://rocketup.yougile.com/api-v2/tasks', {
   method: 'POST',
@@ -176,13 +192,7 @@ const response = await fetch('https://rocketup.yougile.com/api-v2/tasks', {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
   },
-  body: JSON.stringify({
-    title: taskData.title,
-    description,
-    columnId: process.env.COLUMN_AWAITING_CONFIRMATION,
-    stickers: { [AI_STICKER_ID]: "empty" },
-    assigned: process.env.YOUGILE_GLM_USER_ID // ← assigned вместо responsibleId
-  })
+  body: JSON.stringify(taskPayload)
 });
 
 const responseText = await response.text();
