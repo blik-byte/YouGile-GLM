@@ -59,7 +59,7 @@ async function processMail() {
     await mailClient.connect();
     console.log("✅ IMAP подключен");
 
-    const lock = await mailClient.getMailboxLock("AI");
+    const lock = await mailClient.getMailboxLock("INBOX");
     
     try {
       const range = await mailClient.search({ seen: false });
@@ -234,7 +234,7 @@ async function runIdleLoop() {
 
     try {
       await mailClient.connect();
-      const lock = await mailClient.getMailboxLock("AI");
+      const lock = await mailClient.getMailboxLock("INBOX");
 
       console.log("👂 IDLE: слушаю новые письма...");
 
