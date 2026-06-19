@@ -11,7 +11,7 @@
   "cors": "^2.8.5",
   "openai": "^4.104.0",
   "imapflow": "^1.0.183",
-  "mailparser": "^3.7.2"
+  "mailparser": "^3.7.2",
   "mongodb": "^6.12.0"
 }
 }
