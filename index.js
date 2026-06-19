@@ -252,9 +252,7 @@ app.get("/check-mail", async (req, res) => {
 });
 
 app.get("/process-mail", async (req, res) => {
-
   try {
-
     const mailClient = new ImapFlow({
       host: "imap.mail.ru",
       port: 993,
@@ -266,130 +264,117 @@ app.get("/process-mail", async (req, res) => {
     });
 
     await mailClient.connect();
-
     let lock = await mailClient.getMailboxLock("AI");
-
     let mailText = "";
     const processedUids = [];
 
-try {
-
-for await (let message of mailClient.fetch("1:*", {
-  uid: true,
-  source: true
-})) {
-
-  const parsed = await simpleParser(message.source);
-
-  mailText += (parsed.text || "").trim() + "\n";
-
-  processedUids.push(message.uid);
-
-}
-
+    try {
+      for await (let message of mailClient.fetch("1:*", {
+        uid: true,
+        source: true
+      })) {
+        const parsed = await simpleParser(message.source);
+        mailText += (parsed.text || "").trim() + "\n";
+        processedUids.push(message.uid);
+      }
     } finally {
-
       lock.release();
-
     }
 
-await mailClient.logout();
+    await mailClient.logout();
 
-if (processedUids.length === 0) {
+    if (processedUids.length === 0) {
+      return res.json({
+        success: true,
+        created: 0,
+        message: "Нет новых писем"
+      });
+    }
 
-  return res.json({
-    success: true,
-    created: 0,
-    message: "Нет новых писем"
-  });
+    // GLM анализирует и возвращает полное описание
+    const glmResponse = await fetch(
+      "https://api.z.ai/api/paas/v4/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.ZAI_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "glm-4.5-flash",
+          messages: [
+            {
+              role: "system",
+              content: `Разбей текст на отдельные задачи и для каждой задачи верни полное описание.
 
-}
+Верни ТОЛЬКО JSON без пояснений.
 
-const glmResponse = await fetch(
-  "https://api.z.ai/api/paas/v4/chat/completions",
-  {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.ZAI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: "glm-4.5-flash",
-      messages: [
-        {
-          role: "system",
-          content: `Разбей текст на отдельные задачи.
-
-Верни только JSON.
-
+Формат:
 {
   "tasks": [
     {
-      "title": "Название задачи"
+      "title": "краткое название задачи",
+      "result": "что получится в итоге",
+      "estimated_time": "оценка времени выполнения",
+      "steps": ["шаг 1", "шаг 2", "шаг 3"]
     }
   ]
 }`
-        },
-        {
-          role: "user",
-          content: mailText
-        }
-      ],
-      response_format: {
-        type: "json_object"
+            },
+            {
+              role: "user",
+              content: mailText
+            }
+          ],
+          response_format: {
+            type: "json_object"
+          }
+        })
       }
-    })
-  }
-);
-
-if (!glmResponse.ok) {
-  throw new Error(await glmResponse.text());
-}
-
-const glmData = await glmResponse.json();
-
-const aiResponse =
-  glmData.choices[0].message.content;
-
-    const tasks = JSON.parse(aiResponse);
-
- const createdTasks = [];
-
-for (const task of tasks.tasks) {
-
-  const taskResult = await createYougileTask({
-    title: task.title,
-    result: "Создано из письма",
-    estimated_time: "Не определено",
-    steps: [
-      "Проверить задачу"
-    ]
-  });
-
-  createdTasks.push(taskResult.id);
-
-}
-
-if (processedUids.length > 0) {
-
-  const lock2 =
-    await mailClient.getMailboxLock("AI");
-
-  try {
-
-    await mailClient.messageMove(
-      processedUids,
-      "AI_DONE",
-      { uid: true }
     );
 
-  } finally {
+    if (!glmResponse.ok) {
+      throw new Error(await glmResponse.text());
+    }
 
-    lock2.release();
+    const glmData = await glmResponse.json();
+    const aiResponse = glmData.choices[0].message.content;
 
-  }
+    let tasks;
+    try {
+      const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+      tasks = JSON.parse(jsonMatch ? jsonMatch[0] : aiResponse);
+    } catch (e) {
+      throw new Error(`Не удалось распарсить ответ GLM: ${aiResponse}`);
+    }
 
-}
+    console.log(`🤖 GLM вернул ${tasks.tasks.length} задач:`);
+    tasks.tasks.forEach((t, i) => {
+      console.log(`  ${i + 1}. ${t.title} (${t.estimated_time})`);
+    });
+
+    const createdTasks = [];
+
+    for (const task of tasks.tasks) {
+      const taskResult = await createYougileTask({
+        title: task.title,
+        result: task.result || "Не указано",
+        estimated_time: task.estimated_time || "Не указано",
+        steps: task.steps || ["Уточнить план"]
+      });
+
+      createdTasks.push(taskResult.id);
+    }
+
+    // Перемещаем обработанные письма в AI_DONE
+    if (processedUids.length > 0) {
+      const lock2 = await mailClient.getMailboxLock("AI");
+      try {
+        await mailClient.messageMove(processedUids, "AI_DONE", { uid: true });
+      } finally {
+        lock2.release();
+      }
+    }
 
     await mailClient.logout();
 
@@ -399,13 +384,10 @@ if (processedUids.length > 0) {
     });
 
   } catch (error) {
-
+    console.error("❌ Process mail error:", error);
     res.status(500).json({
       success: false,
       error: error.message
     });
-
   }
-
 });
-
