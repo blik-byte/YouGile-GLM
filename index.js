@@ -354,7 +354,7 @@ const aiResponse =
 
   createdTasks.push(taskResult.id);
 
-});
+}
 
     res.json({
       success: true,
