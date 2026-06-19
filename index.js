@@ -148,6 +148,18 @@ app.get('/stats', async (req, res) => {
   }
 });
 
+const { getStats, connectToMongo } = require('./db');
+
+app.get('/db-check', async (req, res) => {
+  try {
+    await connectToMongo();
+    const stats = await getStats();
+    res.json({ success: true, stats });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // При старте сервера
 app.listen(PORT, async () => {
   console.log(`✅ Server running on port ${PORT}`);
