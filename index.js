@@ -1,8 +1,6 @@
 // index.js
 require('dotenv').config();
 
-const { ImapFlow } = require("imapflow");
-const { simpleParser } = require("mailparser");
 const express = require('express');
 const cors = require('cors');
 
@@ -65,49 +63,6 @@ async function findAiStickerFromTask() {
 
 // Запускаем при старте
 findAiStickerFromTask();
-
-// Создание задачи в YouGile
-async function createYougileTask(taskData) {
-
-  const AI_STICKER_ID =
-    "c553a657-fa54-4532-9d02-4750e013005f";
-
-  const description = [
-    "🤖 <b>AI-анализ:</b>",
-    "📊 <b>Результат:</b>",
-    taskData.result || "—",
-    "⏱️ <b>Оценка времени:</b>",
-    taskData.estimated_time || "—",
-    "📋 <b>План действий:</b>",
-    taskData.steps?.map(
-      (step, i) => `${i + 1}. ${step}`
-    ).join("<br>") || "—"
-  ].join("<br><br>");
-
-  const response = await fetch(
-    "https://rocketup.yougile.com/api-v2/tasks",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization":
-          `Bearer ${process.env.YOUGILE_API_KEY}`
-      },
-      body: JSON.stringify({
-        title: taskData.title,
-        description,
-        columnId:
-          "c34d4600-b9d8-4e07-ab3b-e2a024cc69d1",
-        stickers: {
-          [AI_STICKER_ID]: "empty"
-        }
-      })
-    }
-  );
-
-  return await response.json();
-
-}
 
 // Ваш endpoint
 app.post('/assistant', async (req, res) => {
@@ -181,74 +136,6 @@ app.post('/assistant', async (req, res) => {
 // Health check для Render
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Запуск сервера — ОБЯЗАТЕЛЬНО
-app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-});
-
-app.get("/check-mail", async (req, res) => {
-
-  try {
-
-    const mailClient = new ImapFlow({
-      host: "imap.mail.ru",
-      port: 993,
-      secure: true,
-      auth: {
-        user: process.env.MAIL_USER,
-        pass: process.env.MAIL_PASSWORD
-      }
-    });
-
-    await mailClient.connect();
-
-    let lock = await mailClient.getMailboxLock("AI");
-
-    try {
-
-      const messages = [];
-
-      for await (let message of mailClient.fetch("1:*", {
-        envelope: true,
-        source: true
-      })) {
-
-        const parsed = await simpleParser(message.source);
-
-        messages.push({
-          subject: parsed.subject,
-          text: parsed.text
-        });
-
-      }
-
-      res.json({
-        success: true,
-        count: messages.length,
-        messages
-      });
-
-    } finally {
-
-      lock.release();
-
-    }
-
-    await mailClient.logout();
-
-  } catch (error) {
-
-    console.error(error);
-
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-
-  }
-
 });
 
 app.get("/process-mail", async (req, res) => {
