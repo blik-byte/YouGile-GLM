@@ -84,8 +84,7 @@ async function processMail() {
       if (processedUids.length === 0) return 0;
 
       // GLM анализирует
- // В email-worker.js или index.js
-const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
+  const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -127,6 +126,41 @@ const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions',
     response_format: { type: 'json_object' }
   })
 });
+
+      // В email-worker.js
+const taskData = JSON.parse(glmData.choices[0].message.content);
+
+if (taskData.can_execute) {
+  // Создаём задачу в колонке "Ожидает подтверждения"
+  const description = [
+    "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
+    "",
+    "<b>📋 План выполнения:</b>",
+    taskData.execution_plan,
+    "",
+    "<b>🔧 Инструменты:</b>",
+    taskData.tools_needed?.join(', ') || 'web_search',
+    "",
+    "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
+  ].join('<br><br>');
+
+  await fetch('https://rocketup.yougile.com/api-v2/tasks', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
+    },
+    body: JSON.stringify({
+      title: taskData.title,
+      description,
+      columnId: 'ID_COLUMN_AWAITING_CONFIRMATION', // колонка "Ожидает подтверждения"
+      stickers: { [AI_STICKER_ID]: 'empty' }
+    })
+  });
+} else {
+  // Обычная задача для человека
+  await createYougileTask(taskData);
+}
 
       if (!glmResponse.ok) {
         throw new Error(`GLM error: ${await glmResponse.text()}`);
