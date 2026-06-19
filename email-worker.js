@@ -22,13 +22,15 @@ async function createYougileTask(taskData) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.YOUGILE_API_KEY}`
+      "Authorization": `Bearer ${process.env.YOUGILE_GLM_API_KEY}` // ← токен GLM
     },
     body: JSON.stringify({
       title: taskData.title,
       description,
       columnId: "c34d4600-b9d8-4e07-ab3b-e2a024cc69d1",
       stickers: { [AI_STICKER_ID]: "empty" }
+      // Опционально: назначаем GLM исполнителем
+      responsibleId: process.env.YOUGILE_GLM_USER_ID
     })
   });
 
