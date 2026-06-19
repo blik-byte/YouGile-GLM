@@ -83,6 +83,10 @@ async function processMail() {
 
       if (processedUids.length === 0) return 0;
 
+// 🔍 ОТЛАДКА
+console.log(`📧 UIDs писем: ${processedUids.join(', ')}`);
+console.log(`📝 Текст письма (первые 300 символов): ${mailText.substring(0, 300)}`);
+
       // GLM анализирует
       const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
         method: 'POST',
@@ -143,6 +147,8 @@ async function processMail() {
       }
 
       console.log(`🤖 GLM вернул задачу: "${taskData.title}" (can_execute: ${taskData.can_execute})`);
+// 🔍 ОТЛАДКА — полный ответ GLM
+console.log(`🤖 Полный ответ GLM:`, JSON.stringify(taskData, null, 2));
 
       const createdTasks = [];
 
@@ -160,36 +166,51 @@ async function processMail() {
           "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
         ].join('<br><br>');
 
-        const response = await fetch('https://rocketup.yougile.com/api-v2/tasks', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
-          },
-          body: JSON.stringify({
-            title: taskData.title,
-            description,
-            columnId: process.env.COLUMN_AWAITING_CONFIRMATION,
-            stickers: { [AI_STICKER_ID]: "empty" },
-            responsibleId: process.env.YOUGILE_GLM_USER_ID
-          })
-        });
+        console.log(`🔧 Отправляю задачу в YouGile...`);
+console.log(`🔧 columnId: "${process.env.COLUMN_AWAITING_CONFIRMATION}"`);
+console.log(`🔧 title: "${taskData.title}"`);
 
-        const taskResult = await response.json();
-        createdTasks.push(taskResult.id);
-        console.log(`✅ Задача для AI создана: ${taskResult.id}`);
+const response = await fetch('https://rocketup.yougile.com/api-v2/tasks', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
+  },
+  body: JSON.stringify({
+    title: taskData.title,
+    description,
+    columnId: process.env.COLUMN_AWAITING_CONFIRMATION,
+    stickers: { [AI_STICKER_ID]: "empty" },
+    responsibleId: process.env.YOUGILE_GLM_USER_ID
+  })
+});
+
+const responseText = await response.text();
+console.log(`🔧 YouGile статус: ${response.status}`);
+console.log(`🔧 YouGile ответ: ${responseText}`);
+
+if (!response.ok) {
+  console.error(`❌ YouGile ошибка: ${response.status} - ${responseText}`);
+  throw new Error(`YouGile error: ${response.status} - ${responseText}`);
+}
+
+const taskResult = JSON.parse(responseText);
+createdTasks.push(taskResult.id);
+console.log(`✅ Задача для AI создана: ${taskResult.id}`);
 
       } else {
-        // Обычная задача для человека
-        const taskResult = await createYougileTask({
-          title: taskData.title,
-          result: taskData.result || "Не указано",
-          estimated_time: taskData.estimated_time || "Не указано",
-          steps: taskData.steps || ["Уточнить план"]
-        });
-        createdTasks.push(taskResult.id);
-        console.log(`✅ Задача для человека создана: ${taskResult.id}`);
-      }
+  // Обычная задача для человека
+  console.log(`🔧 Создаю обычную задачу в колонку: "${process.env.COLUMN_DEFAULT}"`);
+  const taskResult = await createYougileTask({
+    title: taskData.title,
+    result: taskData.result || "Не указано",
+    estimated_time: taskData.estimated_time || "Не указано",
+    steps: taskData.steps || ["Уточнить план"]
+  });
+  console.log(`🔧 YouGile ответ:`, JSON.stringify(taskResult));
+  createdTasks.push(taskResult.id);
+  console.log(`✅ Задача для человека создана: ${taskResult.id}`);
+}
 
       await mailClient.messageFlagsAdd(processedUids, ["\\Seen"], { uid: true });
 
