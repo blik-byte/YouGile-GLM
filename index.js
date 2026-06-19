@@ -4,6 +4,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
+// ✅ Импортируем worker из отдельного файла
+const { startEmailWorker, processMail } = require('./email-worker');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
