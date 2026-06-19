@@ -15,6 +15,25 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(cors());
 
+app.get('/columns', async (req, res) => {
+  try {
+    const response = await fetch(
+      'https://rocketup.yougile.com/api-v2/columns',
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
+        }
+      }
+    );
+    const data = await response.json();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+
 // 🔍 Поиск GLM-пользователя (можно удалить после настройки)
 app.get('/find-glm-user', async (req, res) => {
   try {
