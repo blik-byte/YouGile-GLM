@@ -292,7 +292,6 @@ app.get("/process-mail", async (req, res) => {
 
     await mailClient.logout();
 
-    const completion = await client.chat.completions.create({
 const glmResponse = await fetch(
   "https://api.z.ai/api/paas/v4/chat/completions",
   {
@@ -306,8 +305,7 @@ const glmResponse = await fetch(
       messages: [
         {
           role: "system",
-          content: `
-Разбей текст на отдельные задачи.
+          content: `Разбей текст на отдельные задачи.
 
 Верни только JSON.
 
@@ -317,8 +315,7 @@ const glmResponse = await fetch(
       "title": "Название задачи"
     }
   ]
-}
-`
+}`
         },
         {
           role: "user",
@@ -332,13 +329,14 @@ const glmResponse = await fetch(
   }
 );
 
+if (!glmResponse.ok) {
+  throw new Error(await glmResponse.text());
+}
+
 const glmData = await glmResponse.json();
 
 const aiResponse =
   glmData.choices[0].message.content;
-
-    const aiResponse =
-      completion.choices[0].message.content;
 
     const tasks = JSON.parse(aiResponse);
 
