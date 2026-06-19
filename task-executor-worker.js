@@ -4,11 +4,9 @@ const { runAgent } = require('./ai-agent');
 const executors = require('./tool-executors');
 
 async function checkTasksForExecution() {
-  console.log('🔍 Проверяю задачи для выполнения...');
-
   // Получаем задачи из колонки "К выполнению"
   const response = await fetch(
-    `https://rocketup.yougile.com/api-v2/tasks?columnId=ID_COLUMN_TO_EXECUTE`,
+    `https://rocketup.yougile.com/api-v2/tasks?columnId=${process.env.COLUMN_TO_EXECUTE}`,
     {
       headers: {
         'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
@@ -19,7 +17,7 @@ async function checkTasksForExecution() {
   const tasks = await response.json();
 
   if (!tasks.items || tasks.items.length === 0) {
-    console.log('📭 Нет задач для выполнения');
+    // ❌ Убрали console.log — тишина в логах
     return;
   }
 
