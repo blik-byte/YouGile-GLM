@@ -270,5 +270,3 @@ ${chatContext}
 }
 
 module.exports = { runAgent, runAgentForQuestion };
-
-module.exports = { runAgent };
