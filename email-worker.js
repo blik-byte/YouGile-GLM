@@ -35,14 +35,25 @@ function shouldIgnoreEmail(parsed) {
 
 // Функция создания задачи (для человека)
 async function createYougileTask(taskData, columnId = process.env.COLUMN_DEFAULT) {
-  const executionPlan = (taskData.execution_plan || "Не указан")
-  .replace(/\n+/g, '<br>')
-  .replace(/<br><br>/g, '<br>');
-  const description = [
+  // Форматируем execution_plan (массив или строка)
+let executionPlanFormatted;
+if (Array.isArray(taskData.execution_plan)) {
+  // Если это массив — нумеруем пункты
+  executionPlanFormatted = taskData.execution_plan
+    .map((step, i) => `${i + 1}. ${step}`)
+    .join('<br>');
+} else {
+  // Если это строка — просто заменяем переносы
+  executionPlanFormatted = (taskData.execution_plan || "Не указан")
+    .replace(/\n+/g, '<br>')
+    .replace(/<br><br>/g, '<br>');
+}
+
+const description = [
   "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
   "",
   "<b>📋 План выполнения:</b>",
-  executionPlan,
+  executionPlanFormatted,
   "",
   "<b>🔧 Инструменты:</b>",
   taskData.tools_needed?.join(', ') || 'web_search',
