@@ -19,14 +19,10 @@ function shouldIgnoreEmail(parsed) {
   const from = (parsed.from?.value?.[0]?.address || '').toLowerCase();
   const subject = (parsed.subject || '').toLowerCase();
   
-  // Игнорируем письма от определённых доменов
   for (const ignore of IGNORE_SENDERS) {
-    if (from.includes(ignore)) {
-      return true;
-    }
+    if (from.includes(ignore)) return true;
   }
   
-  // Игнорируем уведомления
   if (subject.includes('notification') || 
       subject.includes('уведомление') ||
       subject.includes('назначена задача') ||
@@ -37,7 +33,7 @@ function shouldIgnoreEmail(parsed) {
   return false;
 }
 
-// Функция создания задачи
+// Функция создания задачи (для человека)
 async function createYougileTask(taskData, columnId = process.env.COLUMN_DEFAULT) {
   const description = [
     "🤖 <b>AI-анализ:</b>",
@@ -47,7 +43,19 @@ async function createYougileTask(taskData, columnId = process.env.COLUMN_DEFAULT
     taskData.estimated_time || "—",
     "📋 <b>План действий:</b>",
     taskData.steps?.map((step, i) => `${i + 1}. ${step}`).join("<br>") || "—"
-  ].join("<br><br>");
+  ].join("<br>");  // ← было <br><br>, стало <br>
+
+  // ✅ ИСПРАВЛЕНО: assigned — это МАССИВ, а не строка!
+  const payload = {
+    title: taskData.title,
+    description,
+    columnId: columnId,
+    stickers: { [AI_STICKER_ID]: "empty" }
+  };
+
+  if (process.env.YOUGILE_GLM_USER_ID) {
+    payload.assigned = [process.env.YOUGILE_GLM_USER_ID];
+  }
 
   const response = await fetch("https://rocketup.yougile.com/api-v2/tasks", {
     method: "POST",
@@ -55,14 +63,14 @@ async function createYougileTask(taskData, columnId = process.env.COLUMN_DEFAULT
       "Content-Type": "application/json",
       "Authorization": `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
     },
-    body: JSON.stringify({
-      title: taskData.title,
-      description,
-      columnId: columnId,
-      stickers: { [AI_STICKER_ID]: "empty" },
-      assigned: process.env.YOUGILE_GLM_USER_ID // ← assigned вместо responsibleId
-    })
+    body: JSON.stringify(payload)
   });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`❌ YouGile ошибка при создании задачи: ${response.status} - ${errorText}`);
+    throw new Error(`YouGile error: ${response.status}`);
+  }
 
   return await response.json();
 }
@@ -71,7 +79,6 @@ async function createYougileTask(taskData, columnId = process.env.COLUMN_DEFAULT
 async function processMail() {
   console.log(`🔍 processMail() запущен`);
 
-  
   if (isProcessing) {
     console.log("⏳ Уже идёт обработка, пропускаем");
     return 0;
@@ -95,21 +102,11 @@ async function processMail() {
     const lock = await mailClient.getMailboxLock("INBOX");
     
     try {
-      // 🔍 Проверяем, есть ли вообще фильтр по теме
-      console.log(`🔍 Ищем непрочитанные письма...`);
-      
-      // Сначала ищем ВСЕ непрочитанные (для диагностики)
-      const allUnseen = await mailClient.search({ seen: false });
-      console.log(`📬 Всего непрочитанных писем: ${allUnseen.length}`);
-
-      
-      // Ищем только непрочитанные письма с темой "[TASK]" или "Задача:"
-const range = await mailClient.search({ 
-  seen: false,
-  header: { 
-    "subject": ["[TASK]", "Задача:", "задача:", "task:"] 
-  }
-});
+      // Ищем непрочитанные письма с темой [TASK]
+      const range = await mailClient.search({ 
+        seen: false,
+        header: { "subject": "[TASK]" }
+      });
 
       console.log(`📬 Писем с темой [TASK]: ${range.length}`);
       
@@ -118,200 +115,178 @@ const range = await mailClient.search({
         return 0;
       }
 
-// Если не нашли — пробуем все непрочитанные (для обратной совместимости)
-if (range.length === 0) {
-  const allUnseen = await mailClient.search({ seen: false });
-  console.log(`📭 Писем с темой [TASK] не найдено. Всего непрочитанных: ${allUnseen.length}`);
-  return 0;
-}
-      
-      if (range.length === 0) {
-        console.log("📭 Нет новых писем");
-        return 0;
-      }
-
-      console.log(`📬 Найдено ${range.length} непрочитанных писем`);
-
       let mailText = "";
       const processedUids = [];
 
       for await (let message of mailClient.fetch(range, {
-  uid: true,
-  source: true
-})) {
-  const parsed = await simpleParser(message.source);
-  
-  // 🔍 Фильтруем ненужные письма
-  if (shouldIgnoreEmail(parsed)) {
-    // Помечаем как прочитанное, но НЕ создаём задачу
-    await mailClient.messageFlagsAdd(message.uid, ["\\Seen"], { uid: true });
-    console.log(`🚫 Пропущено письмо от: ${parsed.from?.value?.[0]?.address} | Тема: ${parsed.subject}`);
-    continue;
-  }
-  
-  mailText += (parsed.text || "").trim() + "\n";
-  processedUids.push(message.uid);
-}
+        uid: true,
+        source: true
+      })) {
+        const parsed = await simpleParser(message.source);
+        
+        // 🔍 Фильтруем ненужные письма
+        if (shouldIgnoreEmail(parsed)) {
+          await mailClient.messageFlagsAdd(message.uid, ["\\Seen"], { uid: true });
+          console.log(`🚫 Пропущено: ${parsed.from?.value?.[0]?.address} | ${parsed.subject}`);
+          continue;
+        }
+        
+        // ✅ Ограничиваем размер текста (макс 5000 символов)
+        const text = (parsed.text || "").trim().substring(0, 5000);
+        console.log(`📧 Письмо UID ${message.uid} | Тема: "${parsed.subject}" | Размер: ${text.length} симв.`);
+        
+        mailText += `[Тема: ${parsed.subject}]\n${text}\n\n`;
+        processedUids.push(message.uid);
+      }
 
       if (processedUids.length === 0) return 0;
 
-// 🔍 ОТЛАДКА
-console.log(`📧 UIDs писем: ${processedUids.join(', ')}`);
-console.log(`📝 Текст письма (первые 300 символов): ${mailText.substring(0, 300)}`);
+      console.log(`📝 Обрабатываю ${processedUids.length} писем, всего ${mailText.length} символов`);
 
-      
-      // GLM анализирует
-      const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.ZAI_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: 'glm-4.5-flash',
-          messages: [
-            {
-              role: 'system',
-              content: `Проанализируй запрос и разбей его на ОТДЕЛЬНЫЕ задачи.
+      // ✅ GLM с таймаутом 90 секунд
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 90000);
 
-Для каждой задачи реши:
-1. Можешь ли ты выполнить эту задачу АВТОНОМНО (используя поиск в интернете, анализ данных)?
-2. Или это задача для человека (требует физических действий, звонков, встреч)?
+      let glmData;
+      try {
+        const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.ZAI_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: 'glm-4.5-flash',
+            messages: [
+              {
+                role: 'system',
+                content: `Проанализируй запрос и разбей его на ОТДЕЛЬНЫЕ задачи.
 
 ВАЖНО: Если в запросе несколько действий — создай несколько задач!
 
-Если можешь выполнить сам:
-- can_execute: true
-- execution_plan: подробный план шагов
-- tools_needed: какие инструменты будешь использовать
+Для каждой задачи:
+- Если можешь выполнить АВТОНОМНО (поиск, анализ): can_execute: true, execution_plan, tools_needed
+- Если задача для человека: can_execute: false, result, estimated_time, steps
 
-Если задача для человека:
-- can_execute: false
-- result: что получится в итоге
-- estimated_time: оценка времени
-- steps: шаги для человека
-
-Верни ТОЛЬКО JSON в формате:
+Верни ТОЛЬКО JSON:
 {
   "tasks": [
     {
-      "title": "название первой задачи",
+      "title": "название",
       "can_execute": true/false,
-      "execution_plan": "план для AI (если can_execute=true)",
+      "execution_plan": "план (если true)",
       "tools_needed": ["web_search"],
-      "result": "результат (если can_execute=false)",
-      "estimated_time": "время (если can_execute=false)",
-      "steps": ["шаги (если can_execute=false)"]
-    },
-    {
-      "title": "название второй задачи",
-      "can_execute": true/false,
-      ...
+      "result": "результат (если false)",
+      "estimated_time": "время (если false)",
+      "steps": ["шаги (если false)"]
     }
   ]
 }`
-            },
-            { role: 'user', content: mailText }
-          ],
-          response_format: { type: 'json_object' }
-        })
-      });
+              },
+              { role: 'user', content: mailText }
+            ],
+            response_format: { type: 'json_object' }
+          }),
+          signal: controller.signal
+        });
 
-      if (!glmResponse.ok) {
-        throw new Error(`GLM error: ${await glmResponse.text()}`);
+        clearTimeout(timeoutId);
+
+        if (!glmResponse.ok) {
+          throw new Error(`GLM error: ${await glmResponse.text()}`);
+        }
+
+        glmData = await glmResponse.json();
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error('GLM API таймаут (90 сек)');
+        }
+        throw error;
       }
 
-      const glmData = await glmResponse.json();
-const aiResponse = glmData.choices[0].message.content;
+      const aiResponse = glmData.choices[0].message.content;
 
-let response;
-try {
-  const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-  response = JSON.parse(jsonMatch ? jsonMatch[0] : aiResponse);
-} catch (e) {
-  throw new Error(`Не удалось распарсить GLM: ${aiResponse}`);
-}
+      let response;
+      try {
+        const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+        response = JSON.parse(jsonMatch ? jsonMatch[0] : aiResponse);
+      } catch (e) {
+        throw new Error(`Не удалось распарсить GLM: ${aiResponse}`);
+      }
 
-// Поддержка обоих форматов (для обратной совместимости)
-const tasks = response.tasks || [response];
+      const tasks = response.tasks || [response];
+      console.log(`🤖 GLM вернул ${tasks.length} задач`);
 
-console.log(`🤖 GLM вернул ${tasks.length} задач`);
+      const createdTasks = [];
 
-const createdTasks = [];
+      for (const taskData of tasks) {
+        console.log(`📋 Задача: "${taskData.title}" (can_execute: ${taskData.can_execute})`);
 
-for (const taskData of tasks) {
-  console.log(`📋 Задача: "${taskData.title}" (can_execute: ${taskData.can_execute})`);
+        if (taskData.can_execute) {
+          const executionPlan = (taskData.execution_plan || "Не указан")
+            .replace(/\n+/g, '<br>')
+            .replace(/<br><br>/g, '<br>');
 
-  if (taskData.can_execute) {
-    // Задача для AI-агента
-// Заменяем переносы строк на <br>
-const executionPlan = (taskData.execution_plan || "Не указан")
-  .replace(/\n+/g, '<br>')
-  .replace(/<br><br>/g, '<br>');
+          const description = [
+            "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
+            "<br>",
+            "<b>📋 План выполнения:</b>",
+            executionPlan,
+            "<br>",
+            "<b>🔧 Инструменты:</b>",
+            taskData.tools_needed?.join(', ') || 'web_search',
+            "<br>",
+            "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
+          ].join('');
 
-const description = [
-  "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
-  "<br>",
-  "<b>📋 План выполнения:</b>",
-  executionPlan,
-  "<br>",
-  "<b>🔧 Инструменты:</b>",
-  taskData.tools_needed?.join(', ') || 'web_search',
-  "<br>",
-  "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
-].join('');
+          const taskPayload = {
+            title: taskData.title,
+            description,
+            columnId: process.env.COLUMN_AWAITING_CONFIRMATION,
+            stickers: { [AI_STICKER_ID]: "empty" }
+          };
 
-    console.log(`🔧 Отправляю задачу в YouGile...`);
-    console.log(`🔧 columnId: "${process.env.COLUMN_AWAITING_CONFIRMATION}"`);
-    console.log(`🔧 title: "${taskData.title}"`);
-    console.log(`🔧 YOUGILE_GLM_USER_ID: "${process.env.YOUGILE_GLM_USER_ID}"`);
+          if (process.env.YOUGILE_GLM_USER_ID) {
+            taskPayload.assigned = [process.env.YOUGILE_GLM_USER_ID];
+          }
 
-    const taskPayload = {
-      title: taskData.title,
-      description,
-      columnId: process.env.COLUMN_AWAITING_CONFIRMATION,
-      stickers: { [AI_STICKER_ID]: "empty" }
-    };
+          console.log(`🔧 Отправляю задачу в YouGile...`);
+          console.log(`🔧 API ключ: ${process.env.YOUGILE_GLM_API_KEY ? 'YOUGILE_GLM_API_KEY ✓' : 'НЕ УСТАНОВЛЕН!'}`);
 
-    if (process.env.YOUGILE_GLM_USER_ID) {
-      taskPayload.assigned = [process.env.YOUGILE_GLM_USER_ID];
-      console.log(`🔧 assigned: [${process.env.YOUGILE_GLM_USER_ID}]`);
-    }
+          const taskResponse = await fetch('https://rocketup.yougile.com/api-v2/tasks', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
+            },
+            body: JSON.stringify(taskPayload)
+          });
 
-    const taskResponse = await fetch('https://rocketup.yougile.com/api-v2/tasks', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
-      },
-      body: JSON.stringify(taskPayload)
-    });
+          const responseText = await taskResponse.text();
+          console.log(`🔧 YouGile статус: ${taskResponse.status}`);
 
-    const responseText = await taskResponse.text();
-    console.log(`🔧 YouGile статус: ${taskResponse.status}`);
+          if (!taskResponse.ok) {
+            console.error(`❌ YouGile ошибка: ${taskResponse.status} - ${responseText}`);
+            continue;
+          }
 
-    if (!taskResponse.ok) {
-      console.error(`❌ YouGile ошибка: ${taskResponse.status} - ${responseText}`);
-      continue; // Пропускаем эту задачу, но продолжаем обработку остальных
-    }
+          const taskResult = JSON.parse(responseText);
+          createdTasks.push(taskResult.id);
+          console.log(`✅ Задача для AI создана: ${taskResult.id}`);
 
-    const taskResult = JSON.parse(responseText);
-    createdTasks.push(taskResult.id);
-    console.log(`✅ Задача для AI создана: ${taskResult.id}`);
-
-  } else {
-    // Обычная задача для человека
-    console.log(`🔧 Создаю обычную задачу в колонку: "${process.env.COLUMN_DEFAULT}"`);
-    const taskResult = await createYougileTask({
-      title: taskData.title,
-      result: taskData.result || "Не указано",
-      estimated_time: taskData.estimated_time || "Не указано",
-      steps: taskData.steps || ["Уточнить план"]
-    });
-    createdTasks.push(taskResult.id);
-    console.log(`✅ Задача для человека создана: ${taskResult.id}`);
-  }
-}
+        } else {
+          console.log(`🔧 Создаю обычную задачу...`);
+          const taskResult = await createYougileTask({
+            title: taskData.title,
+            result: taskData.result || "Не указано",
+            estimated_time: taskData.estimated_time || "Не указано",
+            steps: taskData.steps || ["Уточнить план"]
+          });
+          createdTasks.push(taskResult.id);
+          console.log(`✅ Задача для человека создана: ${taskResult.id}`);
+        }
+      }
 
       await mailClient.messageFlagsAdd(processedUids, ["\\Seen"], { uid: true });
 
@@ -340,7 +315,7 @@ const description = [
   }
 }
 
-// IDLE-цикл для мгновенной реакции
+// IDLE-цикл
 async function runIdleLoop() {
   while (true) {
     const mailClient = new ImapFlow({
@@ -385,7 +360,6 @@ async function runIdleLoop() {
 async function startEmailWorker() {
   console.log("📧 Email worker запущен (IDLE + polling fallback)");
 
-  // Polling каждые 2 минуты
   setInterval(async () => {
     try {
       await processMail();
@@ -394,10 +368,8 @@ async function startEmailWorker() {
     }
   }, 2 * 60 * 1000);
 
-  // IDLE в фоне
   runIdleLoop().catch(e => console.error("IDLE loop crashed:", e));
 
-  // Первая проверка сразу
   await processMail();
 }
 
