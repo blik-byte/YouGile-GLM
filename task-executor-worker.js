@@ -59,16 +59,26 @@ async function checkTasksForExecution() {
         await executors.addComment(task.id, '🤖 AI-агент начал выполнение задачи...');
 
         // Запускаем агента
-        const result = await runAgent(task.id, task.title, task.description || '');
-        
-        await executors.addComment(task.id, `✅ Задача выполнена:\n\n${result}`);
-        console.log(`✅ Задача ${task.id} выполнена`);
-        
-      } catch (error) {
-        console.error(`❌ Ошибка выполнения задачи ${task.id}:`, error.message);
-        await executors.updateTaskStatus(task.id, 'Ошибка');
-        await executors.addComment(task.id, `❌ Ошибка: ${error.message}`);
-      }
+  const result = await runAgent(task.id, task.title, task.description || '');
+  
+  console.log(`📝 Финальный результат агента (${result?.length || 0} симв.):`);
+  console.log(result?.substring(0, 500));
+  
+  if (result && result.trim()) {
+    const commentResult = await executors.addComment(task.id, `✅ Задача выполнена:\n\n${result}`);
+    console.log(`💬 Комментарий добавлен:`, commentResult);
+  } else {
+    console.warn(`⚠️ Пустой результат агента`);
+    await executors.addComment(task.id, `✅ Задача выполнена, но без текстового отчёта. Результаты сохранены в БД.`);
+  }
+  
+  console.log(`✅ Задача ${task.id} выполнена`);
+  
+} catch (error) {
+  console.error(`❌ Ошибка выполнения задачи ${task.id}:`, error.message);
+  await executors.updateTaskStatus(task.id, 'Ошибка');
+  await executors.addComment(task.id, `❌ Ошибка: ${error.message}`);
+}
     }
   } catch (error) {
     console.error(`❌ Ошибка checkTasksForExecution: ${error.message}`);
