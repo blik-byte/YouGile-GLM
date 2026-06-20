@@ -5,6 +5,38 @@ const { simpleParser } = require("mailparser");
 let isProcessing = false;
 const AI_STICKER_ID = "c553a657-fa54-4532-9d02-4750e013005f";
 
+// 🔍 Фильтр для игнорирования ненужных писем
+const IGNORE_SENDERS = [
+  'yougile.com',
+  'noreply',
+  'no-reply',
+  'mailer-daemon',
+  'postmaster',
+  'notification'
+];
+
+function shouldIgnoreEmail(parsed) {
+  const from = (parsed.from?.value?.[0]?.address || '').toLowerCase();
+  const subject = (parsed.subject || '').toLowerCase();
+  
+  // Игнорируем письма от определённых доменов
+  for (const ignore of IGNORE_SENDERS) {
+    if (from.includes(ignore)) {
+      return true;
+    }
+  }
+  
+  // Игнорируем уведомления
+  if (subject.includes('notification') || 
+      subject.includes('уведомление') ||
+      subject.includes('назначена задача') ||
+      subject.includes('выполнена')) {
+    return true;
+  }
+  
+  return false;
+}
+
 // Функция создания задачи
 async function createYougileTask(taskData, columnId = process.env.COLUMN_DEFAULT) {
   const description = [
@@ -60,7 +92,20 @@ async function processMail() {
     const lock = await mailClient.getMailboxLock("INBOX");
     
     try {
-      const range = await mailClient.search({ seen: false });
+      // Ищем только непрочитанные письма с темой "[TASK]" или "Задача:"
+const range = await mailClient.search({ 
+  seen: false,
+  header: { 
+    "subject": ["[TASK]", "Задача:", "задача:", "task:"] 
+  }
+});
+
+// Если не нашли — пробуем все непрочитанные (для обратной совместимости)
+if (range.length === 0) {
+  const allUnseen = await mailClient.search({ seen: false });
+  console.log(`📭 Писем с темой [TASK] не найдено. Всего непрочитанных: ${allUnseen.length}`);
+  return 0;
+}
       
       if (range.length === 0) {
         console.log("📭 Нет новых писем");
@@ -73,13 +118,22 @@ async function processMail() {
       const processedUids = [];
 
       for await (let message of mailClient.fetch(range, {
-        uid: true,
-        source: true
-      })) {
-        const parsed = await simpleParser(message.source);
-        mailText += (parsed.text || "").trim() + "\n";
-        processedUids.push(message.uid);
-      }
+  uid: true,
+  source: true
+})) {
+  const parsed = await simpleParser(message.source);
+  
+  // 🔍 Фильтруем ненужные письма
+  if (shouldIgnoreEmail(parsed)) {
+    // Помечаем как прочитанное, но НЕ создаём задачу
+    await mailClient.messageFlagsAdd(message.uid, ["\\Seen"], { uid: true });
+    console.log(`🚫 Пропущено письмо от: ${parsed.from?.value?.[0]?.address} | Тема: ${parsed.subject}`);
+    continue;
+  }
+  
+  mailText += (parsed.text || "").trim() + "\n";
+  processedUids.push(message.uid);
+}
 
       if (processedUids.length === 0) return 0;
 
@@ -87,6 +141,40 @@ async function processMail() {
 console.log(`📧 UIDs писем: ${processedUids.join(', ')}`);
 console.log(`📝 Текст письма (первые 300 символов): ${mailText.substring(0, 300)}`);
 
+      // Список адресов, которые нужно игнорировать
+const IGNORE_SENDERS = [
+  'yougile.com',
+  'noreply',
+  'no-reply',
+  'mailer-daemon',
+  'postmaster'
+];
+
+function shouldIgnoreEmail(parsed) {
+  const from = (parsed.from?.value?.[0]?.address || '').toLowerCase();
+  const subject = (parsed.subject || '').toLowerCase();
+  
+  // Игнорируем письма от определённых доменов
+  for (const ignore of IGNORE_SENDERS) {
+    if (from.includes(ignore)) {
+      console.log(`🚫 Игнорируем письмо от ${from} (в списке игнора)`);
+      return true;
+    }
+  }
+  
+  // Игнорируем уведомления и автоматические письма
+  if (subject.includes('notification') || 
+      subject.includes('уведомление') ||
+      subject.startsWith('re:') || 
+      subject.startsWith('fw:')) {
+    console.log(`🚫 Игнорируем письмо с темой: ${parsed.subject}`);
+    return true;
+  }
+  
+  return false;
+}
+
+      
       // GLM анализирует
       const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
         method: 'POST',
@@ -171,17 +259,22 @@ for (const taskData of tasks) {
 
   if (taskData.can_execute) {
     // Задача для AI-агента
-    const description = [
-      "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
-      "",
-      "<b>📋 План выполнения:</b>",
-      taskData.execution_plan || "Не указан",
-      "",
-      "<b>🔧 Инструменты:</b>",
-      taskData.tools_needed?.join(', ') || 'web_search',
-      "",
-      "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
-    ].join('<br><br>');
+    // Заменяем переносы строк на <br> для корректного отображения
+const executionPlan = (taskData.execution_plan || "Не указан")
+  .replace(/\n/g, '<br>')
+  .replace(/<br><br>/g, '<br>');
+
+const description = [
+  "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
+  "<br>",
+  "<b>📋 План выполнения:</b>",
+  executionPlan,
+  "<br>",
+  "<b>🔧 Инструменты:</b>",
+  taskData.tools_needed?.join(', ') || 'web_search',
+  "<br>",
+  "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
+].join('<br>');
 
     console.log(`🔧 Отправляю задачу в YouGile...`);
     console.log(`🔧 columnId: "${process.env.COLUMN_AWAITING_CONFIRMATION}"`);
