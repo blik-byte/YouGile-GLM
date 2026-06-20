@@ -6,27 +6,16 @@ const cors = require('cors');
 
 // ✅ Импорты (каждый ОДИН раз!)
 const { startEmailWorker, processMail, createYougileTask } = require('./email-worker');
-const { connectToMongo, getStats } = require('./db');
+const { connectToMongo, getStats, getTaskResults } = require('./db');
 const { startTaskExecutorWorker } = require('./task-executor-worker');
-const { getTaskResults } = require('./db');
 const { subscribeToWebhooks } = require('./tool-executors');
+const executors = require('./tool-executors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(cors());
-
-// Подписка на чаты
-app.listen(PORT, async () => {
-  console.log(`✅ Server running on port ${PORT}`);
-  await connectToMongo();
-  startEmailWorker();
-  startTaskExecutorWorker();
-  
-  // Подписываемся на вебхуки
-  await subscribeToWebhooks();
-});
 
 // Просмотр результатов задачи
 app.get('/task-results/:taskId', async (req, res) => {
@@ -54,8 +43,6 @@ app.get('/columns', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
-
-
 
 // 🔍 Поиск GLM-пользователя (можно удалить после настройки)
 app.get('/find-glm-user', async (req, res) => {
@@ -294,11 +281,13 @@ app.post('/webhook/yougile', async (req, res) => {
   }
 });
 
-
-// 🚀 Запуск сервера + workers
+// 🚀 Запуск сервера + workers (ОДИН app.listen в конце!)
 app.listen(PORT, async () => {
   console.log(`✅ Server running on port ${PORT}`);
   await connectToMongo();
   startEmailWorker();
   startTaskExecutorWorker();
+  
+  // Подписываемся на вебхуки
+  await subscribeToWebhooks();
 });
