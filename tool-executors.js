@@ -1,84 +1,147 @@
 // tool-executors.js
-const { MongoClient } = require('mongodb');
+const db = require('./db');
 
-const mongoClient = new MongoClient(process.env.MONGODB_URI);
-let db;
-
-async function initMongo() {
-  await mongoClient.connect();
-  db = mongoClient.db('ai_tasks');
-}
-
-// Поиск в интернете (используем бесплатный API)
+// 🔍 Умный поиск с кэшем и fallback
 async function webSearch(query) {
-  // Вариант 1: DuckDuckGo Instant Answer API (бесплатно)
-  const response = await fetch(
-    `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json`
-  );
-  const data = await response.json();
+  console.log(`🔍 Поиск: "${query.substring(0, 50)}..."`);
   
-  return {
-    query,
-    abstract: data.Abstract || 'Нет краткого описания',
-    related: data.RelatedTopics?.slice(0, 5).map(t => t.Text) || []
-  };
+  // 1. Проверяем кэш (7 дней)
+  try {
+    const cached = await db.getCachedSearch(query);
+    if (cached) {
+      console.log(`📦 Из кэша`);
+      return { ...cached, from_cache: true };
+    }
+  } catch (e) {
+    console.warn(`⚠️ Ошибка кэша: ${e.message}`);
+  }
+  
+  // 2. Tavily (если есть ключ) — 1000 запросов/мес бесплатно
+  if (process.env.TAVILY_API_KEY) {
+    try {
+      const response = await fetch('https://api.tavily.com/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          api_key: process.env.TAVILY_API_KEY,
+          query,
+          max_results: 5,
+          include_answer: true,
+          search_depth: 'basic'
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const result = {
+          query,
+          answer: data.answer || 'Нет краткого ответа',
+          results: (data.results || []).map(r => ({
+            title: r.title,
+            url: r.url,
+            content: (r.content || '').substring(0, 500)
+          })),
+          source: 'tavily'
+        };
+        
+        try { await db.cacheSearch(query, result); } catch (_) {}
+        return result;
+      }
+    } catch (e) {
+      console.warn(`⚠️ Tavily error: ${e.message}`);
+    }
+  }
+  
+  // 3. Fallback на DuckDuckGo
+  try {
+    const response = await fetch(
+      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
+    );
+    const data = await response.json();
+    
+    const result = {
+      query,
+      answer: data.Abstract || 'Нет краткого описания',
+      results: (data.RelatedTopics || [])
+        .filter(t => t.Text)
+        .slice(0, 5)
+        .map(t => ({
+          title: (t.Text || '').substring(0, 100),
+          url: t.FirstURL,
+          content: t.Text
+        })),
+      source: 'duckduckgo'
+    };
+    
+    try { await db.cacheSearch(query, result); } catch (_) {}
+    return result;
+  } catch (e) {
+    return { query, error: e.message, source: 'fallback' };
+  }
 }
 
-// Сохранение результата в MongoDB
+// 💾 Сохранение результата в MongoDB
 async function saveResult(taskId, step, data) {
-  if (!db) await initMongo();
-  
-  await db.collection('task_results').insertOne({
-    taskId,
-    step,
-    data,
-    timestamp: new Date()
-  });
-  
-  return { success: true, message: `Результат шага "${step}" сохранён` };
+  try {
+    const id = await db.saveTaskStep(taskId, step, data);
+    return { success: true, id: id.toString() };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 }
 
-// Обновление статуса задачи в YouGile
+// 🔄 Обновление статуса задачи в YouGile
 async function updateTaskStatus(taskId, status) {
-  // ID колонок (замените на ваши)
   const COLUMN_IDS = {
-    'Выполняется': 'id-column-executing',
-    'Готово': 'id-column-done',
-    'Ошибка': 'id-column-error'
+    'Выполняется': process.env.COLUMN_EXECUTING,
+    'Готово': process.env.COLUMN_DONE,
+    'Ошибка': process.env.COLUMN_ERROR
   };
   
-  const response = await fetch(
-    `https://rocketup.yougile.com/api-v2/tasks/${taskId}`,
-    {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
-      },
-      body: JSON.stringify({
-        columnId: COLUMN_IDS[status]
-      })
-    }
-  );
+  const columnId = COLUMN_IDS[status];
+  if (!columnId) {
+    console.warn(`⚠️ Неизвестный статус: ${status}`);
+    return { success: false, error: `Unknown status: ${status}` };
+  }
   
-  return { success: response.ok };
+  try {
+    const response = await fetch(
+      `https://rocketup.yougile.com/api-v2/tasks/${taskId}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
+        },
+        body: JSON.stringify({ columnId })
+      }
+    );
+    
+    return { success: response.ok, status: response.status };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 }
 
-// Добавление комментария к задаче
+// 💬 Добавление комментария к задаче
 async function addComment(taskId, text) {
-  const response = await fetch(
-    `https://rocketup.yougile.com/api-v2/tasks/${taskId}/chat`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
-      },
-      body: JSON.stringify({ text })
-    }
-  );
-  
-  return { success: response.ok };
+  try {
+    const response = await fetch(
+      `https://rocketup.yougile.com/api-v2/tasks/${taskId}/chat`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
+        },
+        body: JSON.stringify({ text })
+      }
+    );
+    
+    return { success: response.ok, status: response.status };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 }
 
 module.exports = {
