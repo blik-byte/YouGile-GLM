@@ -6,6 +6,13 @@ const executors = require('./tool-executors');
 const processedTasks = new Set();
 
 async function checkTasksForExecution() {
+  console.log(`🔍 Проверка задач... COLUMN_TO_EXECUTE: ${process.env.COLUMN_TO_EXECUTE}`);
+  
+  if (!process.env.COLUMN_TO_EXECUTE) {
+    console.warn('⚠️ COLUMN_TO_EXECUTE не установлен!');
+    return;
+  }
+  
   if (!process.env.COLUMN_TO_EXECUTE) {
     console.warn('⚠️ COLUMN_TO_EXECUTE не установлен');
     return;
@@ -72,7 +79,9 @@ async function checkTasksForExecution() {
 }
 
 function startTaskExecutorWorker() {
-  console.log('🤖 Task executor worker запущен (проверка каждые 30 сек)');
+  console.log('🤖 Task executor worker ЗАПУЩЕН (проверка каждые 30 сек)');
+  console.log(`🔧 COLUMN_TO_EXECUTE: ${process.env.COLUMN_TO_EXECUTE}`);
+  console.log(`🔧 YOUGILE_GLM_API_KEY: ${process.env.YOUGILE_GLM_API_KEY ? '✓ установлен' : '❌ НЕ УСТАНОВЛЕН'}`);
   
   setInterval(checkTasksForExecution, 30 * 1000);
   checkTasksForExecution();
