@@ -181,34 +181,41 @@ try {
 
       console.log(`📝 Обрабатываю ${processedUids.length} писем, всего ${mailText.length} символов`);
 
-      // ✅ GLM с таймаутом 90 секунд
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 90000);
+// ✅ GLM с retry-логикой и увеличенным таймаутом
+const MAX_RETRIES = 3;
+const BASE_TIMEOUT = 120000; // 120 секунд
+let glmData;
+let lastError;
 
-      let glmData;
-      try {
-        const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.ZAI_API_KEY}`
-          },
-          body: JSON.stringify({
-            model: 'glm-4.5-flash',
-            messages: [
-              {
-                role: 'system',
-                content: `Проанализируй запрос и разбей его на ОТДЕЛЬНЫЕ задачи.
+for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  const controller = new AbortController();
+  const timeout = BASE_TIMEOUT + (attempt - 1) * 30000; // увеличиваем с каждой попыткой
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    console.log(`🤖 GLM запрос (попытка ${attempt}/${MAX_RETRIES}, таймаут ${timeout/1000}с)...`);
+    const startTime = Date.now();
+
+    const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.ZAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'glm-4.5-flash',
+        messages: [
+          {
+            role: 'system',
+            content: `Проанализируй запрос и разбей его на ОТДЕЛЬНЫЕ задачи.
 
 ВАЖНО: Если в запросе несколько действий — создай несколько задач!
 
 Для каждой задачи:
-  - Если можешь выполнить АВТОНОМНО (поиск, анализ): 
+- Если можешь выполнить АВТОНОМНО (поиск, анализ): 
   - can_execute: true
   - execution_plan: массив из 3-7 подробных шагов (ОБЯЗАТЕЛЬНО заполни!)
   - tools_needed: массив инструментов
-
-ВАЖНО: execution_plan НЕ ДОЛЖЕН быть пустым! Минимум 3 шага для каждой задачи!
 
 - Если задача для человека: 
   - can_execute: false
@@ -240,28 +247,47 @@ try {
 }
 
 ВАЖНО: execution_plan ВСЕГДА должен быть МАССИВОМ строк, даже если один шаг!`
-              },
-              { role: 'user', content: mailText }
-            ],
-            response_format: { type: 'json_object' }
-          }),
-          signal: controller.signal
-        });
+          },
+          { role: 'user', content: mailText }
+        ],
+        response_format: { type: 'json_object' }
+      }),
+      signal: controller.signal
+    });
 
-        clearTimeout(timeoutId);
+    clearTimeout(timeoutId);
+    const elapsed = Date.now() - startTime;
+    console.log(`✅ GLM ответил за ${elapsed}мс (статус ${glmResponse.status})`);
 
-        if (!glmResponse.ok) {
-          throw new Error(`GLM error: ${await glmResponse.text()}`);
-        }
+    if (!glmResponse.ok) {
+      const errorText = await glmResponse.text();
+      throw new Error(`GLM error ${glmResponse.status}: ${errorText}`);
+    }
 
-        glmData = await glmResponse.json();
-      } catch (error) {
-        clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
-          throw new Error('GLM API таймаут (90 сек)');
-        }
-        throw error;
-      }
+    glmData = await glmResponse.json();
+    break; // Успех — выходим из цикла retry
+
+  } catch (error) {
+    clearTimeout(timeoutId);
+    lastError = error;
+    
+    if (error.name === 'AbortError') {
+      console.error(`❌ GLM таймаут на попытке ${attempt} (${timeout/1000}с)`);
+    } else {
+      console.error(`❌ GLM ошибка на попытке ${attempt}: ${error.message}`);
+    }
+
+    if (attempt < MAX_RETRIES) {
+      const waitTime = attempt * 5000; // 5с, 10с между попытками
+      console.log(`⏳ Ждём ${waitTime/1000}с перед следующей попыткой...`);
+      await new Promise(r => setTimeout(r, waitTime));
+    }
+  }
+}
+
+if (!glmData) {
+  throw new Error(`GLM API не ответил после ${MAX_RETRIES} попыток: ${lastError?.message}`);
+}
 
       const aiResponse = glmData.choices[0].message.content;
 
