@@ -281,7 +281,7 @@ try {
       for (const taskData of tasks) {
         console.log(`📋 Задача: "${taskData.title}" (can_execute: ${taskData.can_execute})`);
 
-        if (taskData.can_execute) {
+       if (taskData.can_execute) {
   // ✅ Пропускаем задачи без плана
   if (!taskData.execution_plan || 
       (Array.isArray(taskData.execution_plan) && taskData.execution_plan.length === 0)) {
@@ -295,8 +295,8 @@ try {
     executionPlanFormatted = taskData.execution_plan
       .map((step, i) => {
         const cleanStep = String(step).trim();
-        // Если шаг уже начинается с цифры (например "1. ...") — не добавляем нумерацию
-        if (/^\d+[\.\)]\s*/.test(cleanStep)) {
+        // Если шаг уже начинается с номера ("1. ", "1) ") или "Шаг N:" — не добавляем нумерацию
+        if (/^(шаг\s*\d+[:\.\)]|\d+[\.\)])\s*/i.test(cleanStep)) {
           return cleanStep;
         }
         return `${i + 1}. ${cleanStep}`;
@@ -308,19 +308,44 @@ try {
       .replace(/<br><br>/g, '<br>');
   }
 
-  const description = [
+  // ✅ Формируем описание со всеми блоками
+  const descriptionParts = [
     "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
-    "",
-    "<b>📋 План выполнения:</b>",
-    executionPlanFormatted,
-    "",
-    "<b>🔧 Инструменты:</b>",
+    ""
+  ];
+
+  // Добавляем "Результат", если есть
+  if (taskData.result && String(taskData.result).trim() && String(taskData.result).trim() !== 'Не применимо') {
+    descriptionParts.push("<b>📊 Результат:</b>");
+    descriptionParts.push(String(taskData.result).trim());
+    descriptionParts.push("");
+  }
+
+  // Добавляем "Оценка времени", если есть
+  if (taskData.estimated_time && String(taskData.estimated_time).trim() && String(taskData.estimated_time).trim() !== 'Не применимо') {
+    descriptionParts.push("<b>⏱️ Оценка времени:</b>");
+    descriptionParts.push(String(taskData.estimated_time).trim());
+    descriptionParts.push("");
+  }
+
+  // План выполнения (всегда)
+  descriptionParts.push("<b>📋 План выполнения:</b>");
+  descriptionParts.push(executionPlanFormatted);
+  descriptionParts.push("");
+
+  // Инструменты
+  descriptionParts.push("<b>🔧 Инструменты:</b>");
+  descriptionParts.push(
     Array.isArray(taskData.tools_needed) 
       ? taskData.tools_needed.join(', ') 
-      : (taskData.tools_needed || 'web_search'),
-    "",
-    "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
-  ].join('<br>');
+      : (taskData.tools_needed || 'web_search')
+  );
+  descriptionParts.push("");
+
+  // Инструкция
+  descriptionParts.push("<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'");
+
+  const description = descriptionParts.join('<br>');
 
   // ... остальной код (taskPayload, fetch и т.д.)
 
