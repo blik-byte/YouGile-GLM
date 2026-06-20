@@ -100,19 +100,24 @@ async function processMail() {
     return 0;
   }
 
-  isProcessing = true;
-  const mailClient = new ImapFlow({
-    host: "imap.mail.ru",
-    port: 993,
-    secure: true,
-    auth: {
-      user: process.env.MAIL_USER,
-      pass: process.env.MAIL_PASSWORD
-    }
-  });
+isProcessing = true;
+const mailClient = new ImapFlow({
+  host: "imap.mail.ru",
+  port: 993,
+  secure: true,
+  auth: {
+    user: process.env.MAIL_USER,
+    pass: process.env.MAIL_PASSWORD
+  }
+});
 
-  try {
-    await mailClient.connect();
+// ✅ Обработчик ошибок соединения
+mailClient.on('error', (err) => {
+  console.error(`❌ IMAP error in processMail: ${err.message}`);
+});
+
+try {
+  await mailClient.connect();
     console.log("✅ IMAP подключен");
 
     const lock = await mailClient.getMailboxLock("INBOX");
@@ -376,7 +381,7 @@ if (createdTasks.length === tasks.length) {
   }
 }
 
-// IDLE-цикл
+// IDLE-цикл для мгновенной реакции
 async function runIdleLoop() {
   while (true) {
     const mailClient = new ImapFlow({
@@ -387,6 +392,11 @@ async function runIdleLoop() {
         user: process.env.MAIL_USER,
         pass: process.env.MAIL_PASSWORD
       }
+    });
+
+    // ✅ Обработчик ошибок соединения
+    mailClient.on('error', (err) => {
+      console.error(`❌ IMAP connection error: ${err.message}`);
     });
 
     try {
