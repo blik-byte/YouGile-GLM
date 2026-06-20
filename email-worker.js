@@ -53,7 +53,7 @@ async function createYougileTask(taskData, columnId = process.env.COLUMN_DEFAULT
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.YOUGILE_API_KEY}`
+      "Authorization": `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
     },
     body: JSON.stringify({
       title: taskData.title,
@@ -226,9 +226,9 @@ for (const taskData of tasks) {
 
   if (taskData.can_execute) {
     // Задача для AI-агента
-    // Заменяем переносы строк на <br> для корректного отображения
+// Заменяем переносы строк на <br>
 const executionPlan = (taskData.execution_plan || "Не указан")
-  .replace(/\n/g, '<br>')
+  .replace(/\n+/g, '<br>')
   .replace(/<br><br>/g, '<br>');
 
 const description = [
@@ -241,7 +241,7 @@ const description = [
   taskData.tools_needed?.join(', ') || 'web_search',
   "<br>",
   "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
-].join('<br>');
+].join('');
 
     console.log(`🔧 Отправляю задачу в YouGile...`);
     console.log(`🔧 columnId: "${process.env.COLUMN_AWAITING_CONFIRMATION}"`);
@@ -264,7 +264,7 @@ const description = [
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
+        'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
       },
       body: JSON.stringify(taskPayload)
     });
