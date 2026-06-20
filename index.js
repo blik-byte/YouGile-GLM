@@ -182,6 +182,99 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Webhook для получения событий от YouGile
+app.post('/webhook/yougile', async (req, res) => {
+  try {
+    console.log('📨 Получен webhook от YouGile:', JSON.stringify(req.body).substring(0, 300));
+    
+    const event = req.body;
+    
+    // Проверяем тип события
+    if (event.event === 'chat.message.created') {
+      const { chatId, message } = event.data;
+      
+      // Игнорируем сообщения от самого AI
+      if (message.author?.email?.includes('ai.assistant')) {
+        console.log(`💬 Игнорируем сообщение от AI в чате ${chatId}`);
+        return res.json({ success: true, ignored: true });
+      }
+      
+      console.log(`💬 Новое сообщение в чате ${chatId}: ${message.text?.substring(0, 100)}`);
+      
+      // Получаем задачу
+      const taskResponse = await fetch(
+        `https://rocketup.yougile.com/api-v2/tasks/${chatId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
+          }
+        }
+      );
+      
+      if (!taskResponse.ok) {
+        console.error(`❌ Не удалось получить задачу ${chatId}`);
+        return res.json({ success: false, error: 'Task not found' });
+      }
+      
+      const task = await taskResponse.json();
+      
+      // Проверяем, что задача в колонке "Готово" или "Вопросы к AI"
+      const ALLOWED_COLUMNS = [process.env.COLUMN_DONE, process.env.COLUMN_QUESTIONS];
+      if (!ALLOWED_COLUMNS.includes(task.columnId)) {
+        console.log(`⏭️ Задача ${chatId} не в нужной колонке, пропускаем`);
+        return res.json({ success: true, skipped: true });
+      }
+      
+      // Получаем историю чата
+      const chatResponse = await fetch(
+        `https://rocketup.yougile.com/api-v2/chats/${chatId}/messages`,
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
+          }
+        }
+      );
+      
+      if (!chatResponse.ok) {
+        console.error(`❌ Не удалось получить чат ${chatId}`);
+        return res.json({ success: false, error: 'Chat not found' });
+      }
+      
+      const chatMessages = await chatResponse.json();
+      
+      // Формируем контекст для агента
+      const chatContext = chatMessages.items
+        .map(msg => `${msg.author?.name || 'Unknown'}: ${msg.text}`)
+        .join('\n');
+      
+      console.log(`🤖 Запускаю агента для ответа на вопрос в задаче ${chatId}`);
+      
+      // Добавляем комментарий о начале работы
+      await executors.addComment(chatId, '🤖 AI-агент обрабатывает ваш вопрос...');
+      
+      // Запускаем агента в режиме "ответ на вопрос"
+      const { runAgentForQuestion } = require('./ai-agent');
+      const answer = await runAgentForQuestion(
+        chatId,
+        task.title,
+        task.description,
+        chatContext
+      );
+      
+      // Пишем ответ в чат
+      await executors.addComment(chatId, `💡 Ответ:\n\n${answer}`);
+      
+      console.log(`✅ Ответ отправлен в чат задачи ${chatId}`);
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Webhook error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+
 // 🚀 Запуск сервера + workers
 app.listen(PORT, async () => {
   console.log(`✅ Server running on port ${PORT}`);
