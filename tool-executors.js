@@ -204,12 +204,11 @@ async function subscribeToWebhooks() {
   }
 }
 
-module.exports = { webSearch, saveResult, updateTaskStatus, addComment, subscribeToWebhooks };
-
 
 module.exports = {
   webSearch,
   saveResult,
   updateTaskStatus,
-  addComment
+  addComment,
+  subscribeToWebhooks
 };
