@@ -172,6 +172,41 @@ async function addComment(taskId, text) {
   }
 }
 
+
+// Подписка на чаты
+async function subscribeToWebhooks() {
+  const webhookUrl = `https://yougile-glm.onrender.com/webhook/yougile`;
+  
+  console.log(`🔔 Подписываюсь на вебхуки YouGile: ${webhookUrl}`);
+  
+  try {
+    const response = await fetch(
+      'https://rocketup.yougile.com/api-v2/webhooks',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
+        },
+        body: JSON.stringify({
+          url: webhookUrl,
+          events: ['chat.message.created']
+        })
+      }
+    );
+    
+    const data = await response.json();
+    console.log(`✅ Webhook подписка создана:`, data);
+    return data;
+  } catch (e) {
+    console.error(`❌ Ошибка подписки на вебхуки: ${e.message}`);
+    return null;
+  }
+}
+
+module.exports = { webSearch, saveResult, updateTaskStatus, addComment, subscribeToWebhooks };
+
+
 module.exports = {
   webSearch,
   saveResult,
