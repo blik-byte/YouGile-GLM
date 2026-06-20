@@ -29,7 +29,7 @@ async function checkTasksForExecution() {
     console.log(`📦 Ответ API:`, JSON.stringify(data, null, 2).substring(0, 500));
 
     // Проверяем разные варианты структуры ответа
-    const tasks = data.items || data.tasks || data || [];
+    const tasks = data.content || data.items || data.tasks || [];
     
     if (!Array.isArray(tasks) || tasks.length === 0) {
       console.log(`📭 Нет задач в колонке`);
