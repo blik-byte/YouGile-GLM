@@ -188,9 +188,30 @@ app.post('/webhook/yougile', async (req, res) => {
     
     const event = req.body;
     
-    // ✅ Правильное имя события: chat_message-created
     if (event.event === 'chat_message-created') {
-      const { text, chatId } = event.payload;
+      const { text, chatId, label, id: messageId } = event.payload;
+      
+      // ✅ Игнорируем сообщения от AI (по label или по тексту)
+      if (label === 'AI' || 
+          text?.includes('🤖 AI-агент') ||
+          text?.includes('💡 Ответ:')) {
+        console.log(`💬 Игнорируем сообщение от AI в чате ${chatId}`);
+        return res.json({ success: true, ignored: true });
+      }
+      
+      // ✅ Защита от повторной обработки одного сообщения
+      const messageKey = `${chatId}-${messageId}`;
+      if (processedMessages.has(messageKey)) {
+        console.log(`⏭️ Сообщение ${messageId} уже обработано, пропускаем`);
+        return res.json({ success: true, skipped: true });
+      }
+      processedMessages.add(messageKey);
+      
+      // Очистка старых записей (защита от утечки памяти)
+      if (processedMessages.size > 1000) {
+        const firstKey = processedMessages.values().next().value;
+        processedMessages.delete(firstKey);
+      }
       
       console.log(`💬 Новое сообщение в чате ${chatId}: ${text?.substring(0, 100)}`);
       
@@ -237,14 +258,16 @@ app.post('/webhook/yougile', async (req, res) => {
       
       // Проверяем, что последнее сообщение от пользователя (не от AI)
       const lastMessage = chatMessages[chatMessages.length - 1];
-      if (lastMessage?.author?.email?.includes('ai.assistant') ||
-          lastMessage?.author?.name?.toLowerCase().includes('ai')) {
+      if (lastMessage?.label === 'AI' ||
+          lastMessage?.text?.includes('🤖 AI-агент') ||
+          lastMessage?.text?.includes('💡 Ответ:')) {
         console.log(`💬 Последнее сообщение от AI, пропускаем`);
         return res.json({ success: true, skipped: true });
       }
       
       // Формируем контекст для агента
       const chatContext = chatMessages
+        .filter(msg => msg.label !== 'AI' && !msg.text?.includes('🤖 AI-агент'))
         .map(msg => `${msg.author?.name || 'Unknown'}: ${msg.text}`)
         .join('\n');
       
@@ -253,7 +276,7 @@ app.post('/webhook/yougile', async (req, res) => {
       // Добавляем комментарий о начале работы
       await executors.addComment(chatId, '🤖 AI-агент обрабатывает ваш вопрос...');
       
-      // ✅ Правильный импорт (после исправления дубля)
+      // Запускаем агента в режиме "ответ на вопрос"
       const { runAgentForQuestion } = require('./ai-agent');
       const answer = await runAgentForQuestion(
         chatId,
@@ -274,6 +297,9 @@ app.post('/webhook/yougile', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// ✅ Защита от повторной обработки сообщений
+const processedMessages = new Set();
 
 // 🚀 Запуск сервера + workers (ОДИН app.listen в конце!)
 app.listen(PORT, async () => {
