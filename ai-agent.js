@@ -23,6 +23,10 @@ async function runAgent(taskId, taskTitle, taskDescription) {
 7. НЕ повторяй один и тот же запрос
 
 Действуй пошагово. После каждого шага думай, что делать дальше.`
+    },
+    {
+      role: 'user',
+      content: 'Начни выполнение задачи. Используй инструменты для поиска информации и сохранения результатов.'
     }
   ];
 
@@ -33,29 +37,29 @@ async function runAgent(taskId, taskTitle, taskDescription) {
     stepCount++;
     console.log(`🔄 Шаг агента ${stepCount}...`);
     
-    // ✅ Retry-логика для GLM
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 120000);
     
     let data;
     try {
+      // Формируем запрос правильно для GLM API
+      const requestBody = {
+        model: 'glm-4.5-flash',
+        messages: messages,
+        tools: tools,
+        tool_choice: 'auto'
+      };
+      
       console.log(`📤 Отправляю запрос к GLM...`);
-console.log(`📤 Модель: glm-4.5-flash`);
-console.log(`📤 Tools:`, JSON.stringify(tools, null, 2).substring(0, 200));
-console.log(`📤 Messages count: ${messages.length}`);
-
-const response = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
+      console.log(`📤 Messages count: ${messages.length}`);
+      
+      const response = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${process.env.ZAI_API_KEY}`
         },
-        body: JSON.stringify({
-          model: 'glm-4.5-flash',
-          messages,
-          tools,
-          tool_choice: 'auto'
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal
       });
       
@@ -75,7 +79,7 @@ const response = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
       if (maxSteps > 0) {
         console.log(`⏳ Повтор через 5 сек...`);
         await new Promise(r => setTimeout(r, 5000));
-        maxSteps++; // не считаем эту попытку
+        maxSteps++;
         continue;
       }
       throw error;
@@ -127,7 +131,7 @@ const response = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
         result = { error: error.message };
       }
 
-      // Добавляем результат в историю (обрезаем, чтобы не перегружать контекст)
+      // Добавляем результат в историю
       const resultStr = JSON.stringify(result);
       messages.push({
         role: 'tool',
