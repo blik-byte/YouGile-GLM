@@ -9,12 +9,24 @@ const { startEmailWorker, processMail, createYougileTask } = require('./email-wo
 const { connectToMongo, getStats } = require('./db');
 const { startTaskExecutorWorker } = require('./task-executor-worker');
 const { getTaskResults } = require('./db');
+const { subscribeToWebhooks } = require('./tool-executors');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(cors());
+
+// Подписка на чаты
+app.listen(PORT, async () => {
+  console.log(`✅ Server running on port ${PORT}`);
+  await connectToMongo();
+  startEmailWorker();
+  startTaskExecutorWorker();
+  
+  // Подписываемся на вебхуки
+  await subscribeToWebhooks();
+});
 
 // Просмотр результатов задачи
 app.get('/task-results/:taskId', async (req, res) => {
@@ -189,12 +201,12 @@ app.post('/webhook/yougile', async (req, res) => {
     
     const event = req.body;
     
-    // Проверяем тип события
     if (event.event === 'chat.message.created') {
       const { chatId, message } = event.data;
       
       // Игнорируем сообщения от самого AI
-      if (message.author?.email?.includes('ai.assistant')) {
+      if (message.author?.email?.includes('ai.assistant') || 
+          message.author?.name?.toLowerCase().includes('ai')) {
         console.log(`💬 Игнорируем сообщение от AI в чате ${chatId}`);
         return res.json({ success: true, ignored: true });
       }
@@ -218,10 +230,9 @@ app.post('/webhook/yougile', async (req, res) => {
       
       const task = await taskResponse.json();
       
-      // Проверяем, что задача в колонке "Готово" или "Вопросы к AI"
-      const ALLOWED_COLUMNS = [process.env.COLUMN_DONE, process.env.COLUMN_QUESTIONS];
-      if (!ALLOWED_COLUMNS.includes(task.columnId)) {
-        console.log(`⏭️ Задача ${chatId} не в нужной колонке, пропускаем`);
+      // Проверяем, что задача выполнена
+      if (!task.completed) {
+        console.log(`⏭️ Задача ${chatId} не выполнена, пропускаем`);
         return res.json({ success: true, skipped: true });
       }
       
@@ -240,10 +251,19 @@ app.post('/webhook/yougile', async (req, res) => {
         return res.json({ success: false, error: 'Chat not found' });
       }
       
-      const chatMessages = await chatResponse.json();
+      const chatData = await chatResponse.json();
+      const chatMessages = chatData.items || chatData.messages || [];
+      
+      // Проверяем, что последнее сообщение от пользователя (не от AI)
+      const lastMessage = chatMessages[chatMessages.length - 1];
+      if (lastMessage?.author?.email?.includes('ai.assistant') ||
+          lastMessage?.author?.name?.toLowerCase().includes('ai')) {
+        console.log(`💬 Последнее сообщение от AI, пропускаем`);
+        return res.json({ success: true, skipped: true });
+      }
       
       // Формируем контекст для агента
-      const chatContext = chatMessages.items
+      const chatContext = chatMessages
         .map(msg => `${msg.author?.name || 'Unknown'}: ${msg.text}`)
         .join('\n');
       
