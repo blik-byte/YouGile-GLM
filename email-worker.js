@@ -141,39 +141,6 @@ if (range.length === 0) {
 console.log(`📧 UIDs писем: ${processedUids.join(', ')}`);
 console.log(`📝 Текст письма (первые 300 символов): ${mailText.substring(0, 300)}`);
 
-      // Список адресов, которые нужно игнорировать
-const IGNORE_SENDERS = [
-  'yougile.com',
-  'noreply',
-  'no-reply',
-  'mailer-daemon',
-  'postmaster'
-];
-
-function shouldIgnoreEmail(parsed) {
-  const from = (parsed.from?.value?.[0]?.address || '').toLowerCase();
-  const subject = (parsed.subject || '').toLowerCase();
-  
-  // Игнорируем письма от определённых доменов
-  for (const ignore of IGNORE_SENDERS) {
-    if (from.includes(ignore)) {
-      console.log(`🚫 Игнорируем письмо от ${from} (в списке игнора)`);
-      return true;
-    }
-  }
-  
-  // Игнорируем уведомления и автоматические письма
-  if (subject.includes('notification') || 
-      subject.includes('уведомление') ||
-      subject.startsWith('re:') || 
-      subject.startsWith('fw:')) {
-    console.log(`🚫 Игнорируем письмо с темой: ${parsed.subject}`);
-    return true;
-  }
-  
-  return false;
-}
-
       
       // GLM анализирует
       const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
