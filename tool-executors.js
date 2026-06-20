@@ -99,6 +99,8 @@ async function updateTaskStatus(taskId, status) {
   };
   
   const columnId = COLUMN_IDS[status];
+  console.log(`🔄 Обновляю статус задачи ${taskId} → ${status} (columnId: ${columnId})`);
+  
   if (!columnId) {
     console.warn(`⚠️ Неизвестный статус: ${status}`);
     return { success: false, error: `Unknown status: ${status}` };
@@ -117,14 +119,22 @@ async function updateTaskStatus(taskId, status) {
       }
     );
     
+    const responseText = await response.text();
+    console.log(`🔄 YouGile статус: ${response.status}`);
+    console.log(`🔄 YouGile ответ: ${responseText.substring(0, 300)}`);
+    
     return { success: response.ok, status: response.status };
   } catch (e) {
+    console.error(`❌ Ошибка updateTaskStatus: ${e.message}`);
     return { success: false, error: e.message };
   }
 }
 
 // 💬 Добавление комментария к задаче
 async function addComment(taskId, text) {
+  console.log(`💬 Добавляю комментарий к задаче ${taskId}...`);
+  console.log(`💬 Текст (первые 200 симв.): ${text.substring(0, 200)}`);
+  
   try {
     const response = await fetch(
       `https://rocketup.yougile.com/api-v2/tasks/${taskId}/chat`,
@@ -138,8 +148,13 @@ async function addComment(taskId, text) {
       }
     );
     
+    const responseText = await response.text();
+    console.log(`💬 YouGile статус: ${response.status}`);
+    console.log(`💬 YouGile ответ: ${responseText.substring(0, 300)}`);
+    
     return { success: response.ok, status: response.status };
   } catch (e) {
+    console.error(`❌ Ошибка addComment: ${e.message}`);
     return { success: false, error: e.message };
   }
 }
