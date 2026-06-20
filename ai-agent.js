@@ -173,7 +173,7 @@ ${chatContext}
     }
   ];
 
-  let maxSteps = 5; // Ограничиваем шаги для ответов
+  let maxSteps = 5;
   let stepCount = 0;
   
   while (maxSteps-- > 0) {
@@ -207,6 +207,15 @@ ${chatContext}
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`❌ GLM error ${response.status}: ${errorText}`);
+        
+        // ✅ При rate limit ждём дольше
+        if (response.status === 429) {
+          console.log(`⏳ Rate limit, ждём 30 сек...`);
+          await new Promise(r => setTimeout(r, 30000));
+          maxSteps++; // не считаем эту попытку
+          continue;
+        }
+        
         throw new Error(`GLM error ${response.status}`);
       }
       
