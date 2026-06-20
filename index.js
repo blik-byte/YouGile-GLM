@@ -189,13 +189,21 @@ app.post('/webhook/yougile', async (req, res) => {
     const event = req.body;
     
     if (event.event === 'chat_message-created') {
-      const { text, chatId, label, id: messageId } = event.payload;
+      const { text, chatId, label, id: messageId, properties } = event.payload;
       
-      // ✅ Игнорируем сообщения от AI (по label или по тексту)
+      // ✅ Игнорируем системные сообщения (перемещение задачи и т.д.)
+      if (properties?.fromSystem || properties?.move) {
+        console.log(`⚙️ Игнорируем системное сообщение в чате ${chatId}`);
+        return res.json({ success: true, ignored: true });
+      }
+      
+      // ✅ Игнорируем сообщения от AI
       if (label === 'AI' || 
           text?.includes('🤖 AI-агент') ||
-          text?.includes('💡 Ответ:')) {
-        console.log(`💬 Игнорируем сообщение от AI в чате ${chatId}`);
+          text?.includes('💡 Ответ:') ||
+          text === '.' ||
+          !text?.trim()) {
+        console.log(`💬 Игнорируем сообщение от AI или пустое в чате ${chatId}`);
         return res.json({ success: true, ignored: true });
       }
       
