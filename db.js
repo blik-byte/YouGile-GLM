@@ -1,5 +1,6 @@
 // db.js
 const { MongoClient } = require('mongodb');
+const mongoClient = new MongoClient(process.env.MONGODB_URI);
 
 let client;
 let db;
@@ -107,12 +108,17 @@ async function getStats() {
 }
 
 async function getTaskResults(taskId) {
-  await connectToMongo();
-  const db = mongoClient.db('ai_tasks');
-  return await db.collection('task_results')
-    .find({ taskId })
-    .sort({ timestamp: 1 })
-    .toArray();
+  const client = new MongoClient(process.env.MONGODB_URI);
+  try {
+    await client.connect();
+    const db = client.db('ai_tasks');
+    return await db.collection('task_results')
+      .find({ taskId })
+      .sort({ timestamp: 1 })
+      .toArray();
+  } finally {
+    await client.close();
+  }
 }
 
 module.exports = {
