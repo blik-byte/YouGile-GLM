@@ -36,15 +36,21 @@ function shouldIgnoreEmail(parsed) {
 // Функция создания задачи (для человека)
 async function createYougileTask(taskData, columnId = process.env.COLUMN_DEFAULT) {
   // Форматируем execution_plan (массив или строка)
+// ✅ Форматируем execution_plan (массив или строка)
 let executionPlanFormatted;
 if (Array.isArray(taskData.execution_plan)) {
-  // Если это массив — нумеруем пункты
   executionPlanFormatted = taskData.execution_plan
-    .map((step, i) => `${i + 1}. ${step}`)
+    .map((step, i) => {
+      const cleanStep = String(step).trim();
+      // Если шаг уже начинается с цифры (например "1. ...") — не добавляем нумерацию
+      if (/^\d+[\.\)]\s*/.test(cleanStep)) {
+        return cleanStep;
+      }
+      return `${i + 1}. ${cleanStep}`;
+    })
     .join('<br>');
 } else {
-  // Если это строка — просто заменяем переносы
-  executionPlanFormatted = (taskData.execution_plan || "Не указан")
+  executionPlanFormatted = String(taskData.execution_plan || "Не указан")
     .replace(/\n+/g, '<br>')
     .replace(/<br><br>/g, '<br>');
 }
@@ -197,10 +203,12 @@ try {
 ВАЖНО: Если в запросе несколько действий — создай несколько задач!
 
 Для каждой задачи:
-- Если можешь выполнить АВТОНОМНО (поиск, анализ): 
+  - Если можешь выполнить АВТОНОМНО (поиск, анализ): 
   - can_execute: true
-  - execution_plan: массив подробных шагов (ОБЯЗАТЕЛЬНО массив строк!)
+  - execution_plan: массив из 3-7 подробных шагов (ОБЯЗАТЕЛЬНО заполни!)
   - tools_needed: массив инструментов
+
+ВАЖНО: execution_plan НЕ ДОЛЖЕН быть пустым! Минимум 3 шага для каждой задачи!
 
 - Если задача для человека: 
   - can_execute: false
@@ -274,15 +282,27 @@ try {
         console.log(`📋 Задача: "${taskData.title}" (can_execute: ${taskData.can_execute})`);
 
         if (taskData.can_execute) {
+  // ✅ Пропускаем задачи без плана
+  if (!taskData.execution_plan || 
+      (Array.isArray(taskData.execution_plan) && taskData.execution_plan.length === 0)) {
+    console.warn(`⚠️ Пропускаю задачу "${taskData.title}" — нет плана выполнения`);
+    continue;
+  }
+
   // ✅ Форматируем execution_plan (массив или строка)
   let executionPlanFormatted;
   if (Array.isArray(taskData.execution_plan)) {
-    // Если это массив — нумеруем пункты
     executionPlanFormatted = taskData.execution_plan
-      .map((step, i) => `${i + 1}. ${step}`)
+      .map((step, i) => {
+        const cleanStep = String(step).trim();
+        // Если шаг уже начинается с цифры (например "1. ...") — не добавляем нумерацию
+        if (/^\d+[\.\)]\s*/.test(cleanStep)) {
+          return cleanStep;
+        }
+        return `${i + 1}. ${cleanStep}`;
+      })
       .join('<br>');
   } else {
-    // Если это строка — просто заменяем переносы
     executionPlanFormatted = String(taskData.execution_plan || "Не указан")
       .replace(/\n+/g, '<br>')
       .replace(/<br><br>/g, '<br>');
