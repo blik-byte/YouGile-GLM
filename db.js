@@ -106,6 +106,15 @@ async function getStats() {
   return { tasksCount, stepsCount, searchesCount };
 }
 
+async function getTaskResults(taskId) {
+  await connectToMongo();
+  const db = mongoClient.db('ai_tasks');
+  return await db.collection('task_results')
+    .find({ taskId })
+    .sort({ timestamp: 1 })
+    .toArray();
+}
+
 module.exports = {
   connectToMongo,
   saveTaskStep,
@@ -113,5 +122,6 @@ module.exports = {
   saveChatHistory,
   getCachedSearch,
   cacheSearch,
-  getStats
+  getStats,
+  getTaskResults
 };
