@@ -147,104 +147,144 @@ ID задачи: ${taskId}
 }
 
 // Ответы в чате
-async function runAgentForQuestion(taskId, taskTitle, taskDescription, chatContext) {
-  console.log(`🤖 Агент запущен для ответа на вопрос в задаче: ${taskTitle}`);
+async function runAgent(taskId, taskTitle, taskDescription) {
+  console.log(`🤖 Агент запущен для задачи: ${taskTitle}`);
   
   const messages = [
     {
       role: 'system',
-      content: `Ты AI-агент, который отвечает на вопросы по выполненной задаче.
+      content: `Ты AI-агент, который выполняет задачи шаг за шагом.
 
 Задача: ${taskTitle}
 Описание: ${taskDescription}
-
-История чата:
-${chatContext}
+ID задачи: ${taskId}
 
 Правила:
-1. Ответь на последний вопрос пользователя
-2. Если нужен дополнительный поиск — используй web_search
-3. Будь краток и по делу
-4. Если вопрос не по теме задачи — вежливо уточни`
+1. Используй инструменты для выполнения шагов
+2. После каждого важного шага сохраняй результат через save_result (используй taskId: ${taskId})
+3. Добавляй комментарии о прогрессе через add_comment (используй taskId: ${taskId})
+4. Когда задача выполнена — вызови update_task_status с taskId: ${taskId} и status: "Готово"
+5. Если ошибка — вызови update_task_status с taskId: ${taskId} и status: "Ошибка"
+6. Для web_search используй конкретные запросы, не общие фразы
+7. НЕ повторяй один и тот же запрос
+8. ВАЖНО: Всегда используй реальный ID задачи: ${taskId}, а не придумывай свой!
+9. Выполняй ВСЕ шаги из плана, не останавливайся преждевременно
+
+Действуй пошагово. После каждого шага думай, что делать дальше.`
     },
     {
       role: 'user',
-      content: 'Ответь на последний вопрос из чата.'
+      content: `Начни выполнение задачи с ID: ${taskId}. Используй инструменты для поиска информации и сохранения результатов.`
     }
   ];
 
-  let maxSteps = 5;
+  let maxSteps = 25; // Увеличили с 15 до 25
   let stepCount = 0;
+  let rateLimitRetries = 0;
+  const MAX_RATE_LIMIT_RETRIES = 5; // Максимум 5 попыток при rate limit
   
   while (maxSteps-- > 0) {
     stepCount++;
-    console.log(`🔄 Шаг агента (ответ на вопрос) ${stepCount}...`);
+    console.log(`🔄 Шаг агента ${stepCount}...`);
     
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
     
     let data;
-    try {
-      const requestBody = {
-        model: 'glm-4.5-flash',
-        messages: messages,
-        tools: tools,
-        tool_choice: 'auto'
-      };
-      
-      const response = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.ZAI_API_KEY}`
-        },
-        body: JSON.stringify(requestBody),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`❌ GLM error ${response.status}: ${errorText}`);
+    let retryCount = 0;
+    
+    // ✅ Отдельный цикл для retry при rate limit
+    while (retryCount <= MAX_RATE_LIMIT_RETRIES) {
+      try {
+        const requestBody = {
+          model: 'glm-4.5-flash',
+          messages: messages,
+          tools: tools,
+          tool_choice: 'auto'
+        };
         
-        // ✅ При rate limit ждём дольше
-        if (response.status === 429) {
-          console.log(`⏳ Rate limit, ждём 30 сек...`);
-          await new Promise(r => setTimeout(r, 30000));
-          maxSteps++; // не считаем эту попытку
+        console.log(`📤 Отправляю запрос к GLM...`);
+        console.log(`📤 Messages count: ${messages.length}`);
+        
+        const response = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.ZAI_API_KEY}`
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`❌ GLM error ${response.status}: ${errorText}`);
+          
+          // ✅ При rate limit ждём и повторяем
+          if (response.status === 429) {
+            rateLimitRetries++;
+            if (rateLimitRetries > MAX_RATE_LIMIT_RETRIES) {
+              throw new Error(`Превышен лимит rate limit попыток (${MAX_RATE_LIMIT_RETRIES})`);
+            }
+            
+            const waitTime = 30000 * retryCount; // 0, 30с, 60с, 90с...
+            console.log(`⏳ Rate limit, ждём ${waitTime/1000} сек... (попытка ${retryCount + 1}/${MAX_RATE_LIMIT_RETRIES})`);
+            await new Promise(r => setTimeout(r, waitTime));
+            retryCount++;
+            continue; // Повторяем запрос
+          }
+          
+          throw new Error(`GLM error ${response.status}`);
+        }
+        
+        data = await response.json();
+        break; // Успех — выходим из цикла retry
+        
+      } catch (error) {
+        clearTimeout(timeoutId);
+        
+        if (error.name === 'AbortError') {
+          console.error(`❌ GLM таймаут на шаге ${stepCount}`);
+        } else {
+          console.error(`❌ GLM ошибка на шаге ${stepCount}: ${error.message}`);
+        }
+        
+        if (retryCount < MAX_RATE_LIMIT_RETRIES) {
+          const waitTime = 5000 * (retryCount + 1);
+          console.log(`⏳ Повтор через ${waitTime/1000} сек...`);
+          await new Promise(r => setTimeout(r, waitTime));
+          retryCount++;
           continue;
         }
         
-        throw new Error(`GLM error ${response.status}`);
+        throw error;
       }
-      
-      data = await response.json();
-    } catch (error) {
-      clearTimeout(timeoutId);
-      console.error(`❌ GLM ошибка: ${error.message}`);
-      if (maxSteps > 0) {
-        await new Promise(r => setTimeout(r, 3000));
-        maxSteps++;
-        continue;
-      }
-      throw error;
+    }
+    
+    if (!data) {
+      throw new Error('Не удалось получить ответ от GLM после всех попыток');
     }
     
     const msg = data.choices[0].message;
 
+    // Если нет вызовов инструментов — задача завершена
     if (!msg.tool_calls || msg.tool_calls.length === 0) {
-      console.log(`✅ Агент завершил ответ на шаге ${stepCount}`);
-      return msg.content || 'Ответ сформирован';
+      console.log(`✅ Агент завершил работу на шаге ${stepCount}`);
+      return msg.content || 'Задача выполнена';
     }
 
+    // Добавляем ответ агента в историю
     messages.push(msg);
 
+    // Выполняем вызовы инструментов
     for (const call of msg.tool_calls) {
       let args;
       try {
         args = JSON.parse(call.function.arguments);
       } catch (e) {
+        console.error(`❌ Ошибка парсинга аргументов: ${call.function.arguments}`);
         messages.push({
           role: 'tool',
           tool_call_id: call.id,
@@ -259,23 +299,32 @@ ${chatContext}
       try {
         if (call.function.name === 'web_search') {
           result = await executors.webSearch(args.query);
+        } else if (call.function.name === 'save_result') {
+          result = await executors.saveResult(args.taskId || taskId, args.step, args.data);
+        } else if (call.function.name === 'update_task_status') {
+          result = await executors.updateTaskStatus(args.taskId || taskId, args.status);
+        } else if (call.function.name === 'add_comment') {
+          result = await executors.addComment(args.taskId || taskId, args.text);
         } else {
           result = { error: `Unknown tool: ${call.function.name}` };
         }
       } catch (error) {
+        console.error(`❌ Ошибка выполнения ${call.function.name}: ${error.message}`);
         result = { error: error.message };
       }
 
+      // Добавляем результат в историю
       const resultStr = JSON.stringify(result);
       messages.push({
         role: 'tool',
         tool_call_id: call.id,
-        content: resultStr.length > 2000 ? resultStr.substring(0, 2000) + '...' : resultStr
+        content: resultStr.length > 3000 ? resultStr.substring(0, 3000) + '...(обрезано)' : resultStr
       });
     }
   }
 
-  return 'Превышен лимит шагов';
+  console.warn(`⚠️ Превышен лимит шагов (${stepCount})`);
+  return `Задача не завершена полностью. Выполнено ${stepCount} шагов из предполагаемых. Попробуйте разбить задачу на более мелкие части.`;
 }
 
 module.exports = { runAgent, runAgentForQuestion };
