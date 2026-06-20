@@ -274,21 +274,35 @@ try {
         console.log(`📋 Задача: "${taskData.title}" (can_execute: ${taskData.can_execute})`);
 
         if (taskData.can_execute) {
-          const executionPlan = (taskData.execution_plan || "Не указан")
-            .replace(/\n+/g, '<br>')
-            .replace(/<br><br>/g, '<br>');
+  // ✅ Форматируем execution_plan (массив или строка)
+  let executionPlanFormatted;
+  if (Array.isArray(taskData.execution_plan)) {
+    // Если это массив — нумеруем пункты
+    executionPlanFormatted = taskData.execution_plan
+      .map((step, i) => `${i + 1}. ${step}`)
+      .join('<br>');
+  } else {
+    // Если это строка — просто заменяем переносы
+    executionPlanFormatted = String(taskData.execution_plan || "Не указан")
+      .replace(/\n+/g, '<br>')
+      .replace(/<br><br>/g, '<br>');
+  }
 
-          const description = [
-            "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
-            "<br>",
-            "<b>📋 План выполнения:</b>",
-            executionPlan,
-            "<br>",
-            "<b>🔧 Инструменты:</b>",
-            taskData.tools_needed?.join(', ') || 'web_search',
-            "<br>",
-            "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
-          ].join('');
+  const description = [
+    "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
+    "",
+    "<b>📋 План выполнения:</b>",
+    executionPlanFormatted,
+    "",
+    "<b>🔧 Инструменты:</b>",
+    Array.isArray(taskData.tools_needed) 
+      ? taskData.tools_needed.join(', ') 
+      : (taskData.tools_needed || 'web_search'),
+    "",
+    "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
+  ].join('<br>');
+
+  // ... остальной код (taskPayload, fetch и т.д.)
 
           const taskPayload = {
             title: taskData.title,
