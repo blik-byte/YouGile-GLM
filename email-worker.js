@@ -252,7 +252,10 @@ async function processMail() {
           }
 
           console.log(`🔧 Отправляю задачу в YouGile...`);
-          console.log(`🔧 API ключ: ${process.env.YOUGILE_GLM_API_KEY ? 'YOUGILE_GLM_API_KEY ✓' : 'НЕ УСТАНОВЛЕН!'}`);
+console.log(`🔧 API ключ: ${process.env.YOUGILE_GLM_API_KEY ? 'YOUGILE_GLM_API_KEY ✓' : 'НЕ УСТАНОВЛЕН!'}`);
+console.log(`🔧 Токен (первые 10 символов): ${process.env.YOUGILE_GLM_API_KEY?.substring(0, 10)}...`);
+console.log(`🔧 columnId: "${process.env.COLUMN_AWAITING_CONFIRMATION}"`);
+console.log(`🔧 assigned: [${process.env.YOUGILE_GLM_USER_ID}]`);
 
           const taskResponse = await fetch('https://rocketup.yougile.com/api-v2/tasks', {
             method: 'POST',
@@ -288,17 +291,30 @@ async function processMail() {
         }
       }
 
-      await mailClient.messageFlagsAdd(processedUids, ["\\Seen"], { uid: true });
-
-      try {
-        await mailClient.messageMove(processedUids, "AI_DONE", { uid: true });
-        console.log(`📁 Перемещено в AI_DONE`);
-      } catch (moveErr) {
-        console.warn("⚠️ Не удалось переместить:", moveErr.message);
-      }
-
-      console.log(`✅ Создано ${createdTasks.length} задач`);
-      return createdTasks.length;
+      // ✅ Перемещаем письма ТОЛЬКО если все задачи созданы успешно
+if (createdTasks.length === tasks.length) {
+  await mailClient.messageFlagsAdd(processedUids, ["\\Seen"], { uid: true });
+  
+  try {
+    await mailClient.messageMove(processedUids, "AI_DONE", { uid: true });
+    console.log(`📁 Перемещено в AI_DONE`);
+  } catch (moveErr) {
+    console.warn("⚠️ Не удалось переместить:", moveErr.message);
+  }
+  
+  console.log(`✅ Создано ${createdTasks.length} задач из ${tasks.length}`);
+  return createdTasks.length;
+  
+} else {
+  // ❌ Не все задачи созданы — НЕ перемещаем письма
+  console.warn(`⚠️ Создано только ${createdTasks.length} из ${tasks.length} задач`);
+  console.warn(`⚠️ Письма НЕ перемещены в AI_DONE для повторной обработки`);
+  
+  // Помечаем как прочитанные, но НЕ перемещаем
+  await mailClient.messageFlagsAdd(processedUids, ["\\Seen"], { uid: true });
+  
+  return createdTasks.length;
+}
 
     } finally {
       lock.release();
