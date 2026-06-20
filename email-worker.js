@@ -69,6 +69,9 @@ async function createYougileTask(taskData, columnId = process.env.COLUMN_DEFAULT
 
 // Основная функция обработки почты
 async function processMail() {
+  console.log(`🔍 processMail() запущен`);
+
+  
   if (isProcessing) {
     console.log("⏳ Уже идёт обработка, пропускаем");
     return 0;
@@ -92,6 +95,14 @@ async function processMail() {
     const lock = await mailClient.getMailboxLock("INBOX");
     
     try {
+      // 🔍 Проверяем, есть ли вообще фильтр по теме
+      console.log(`🔍 Ищем непрочитанные письма...`);
+      
+      // Сначала ищем ВСЕ непрочитанные (для диагностики)
+      const allUnseen = await mailClient.search({ seen: false });
+      console.log(`📬 Всего непрочитанных писем: ${allUnseen.length}`);
+
+      
       // Ищем только непрочитанные письма с темой "[TASK]" или "Задача:"
 const range = await mailClient.search({ 
   seen: false,
@@ -99,6 +110,13 @@ const range = await mailClient.search({
     "subject": ["[TASK]", "Задача:", "задача:", "task:"] 
   }
 });
+
+      console.log(`📬 Писем с темой [TASK]: ${range.length}`);
+      
+      if (range.length === 0) {
+        console.log("📭 Нет писем с темой [TASK]");
+        return 0;
+      }
 
 // Если не нашли — пробуем все непрочитанные (для обратной совместимости)
 if (range.length === 0) {
