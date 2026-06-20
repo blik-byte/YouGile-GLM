@@ -39,7 +39,12 @@ async function runAgent(taskId, taskTitle, taskDescription) {
     
     let data;
     try {
-      const response = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
+      console.log(`📤 Отправляю запрос к GLM...`);
+console.log(`📤 Модель: glm-4.5-flash`);
+console.log(`📤 Tools:`, JSON.stringify(tools, null, 2).substring(0, 200));
+console.log(`📤 Messages count: ${messages.length}`);
+
+const response = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -57,6 +62,8 @@ async function runAgent(taskId, taskTitle, taskDescription) {
       clearTimeout(timeoutId);
       
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ GLM error ${response.status}: ${errorText}`);
         throw new Error(`GLM error ${response.status}`);
       }
       
