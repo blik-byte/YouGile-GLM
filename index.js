@@ -337,9 +337,6 @@ app.post('/webhook/yougile', async (req, res) => {
   }
 });
 
-// ✅ Защита от повторной обработки сообщений
-const processedMessages = new Set();
-
 // 🚀 Запуск сервера + workers (ОДИН app.listen в конце!)
 app.listen(PORT, async () => {
   console.log(`✅ Server running on port ${PORT}`);
