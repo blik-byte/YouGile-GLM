@@ -36,14 +36,16 @@ function shouldIgnoreEmail(parsed) {
 // Функция создания задачи (для человека)
 async function createYougileTask(taskData, columnId = process.env.COLUMN_DEFAULT) {
   const description = [
-    "🤖 <b>AI-анализ:</b>",
-    "📊 <b>Результат:</b>",
-    taskData.result || "—",
-    "⏱️ <b>Оценка времени:</b>",
-    taskData.estimated_time || "—",
-    "📋 <b>План действий:</b>",
-    taskData.steps?.map((step, i) => `${i + 1}. ${step}`).join("<br>") || "—"
-  ].join("<br>");  // ← было <br><br>, стало <br>
+  "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
+  "",
+  "<b>📋 План выполнения:</b>",
+  executionPlan,
+  "",
+  "<b>🔧 Инструменты:</b>",
+  taskData.tools_needed?.join(', ') || 'web_search',
+  "",
+  "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
+].join('<br>');
 
   // ✅ ИСПРАВЛЕНО: assigned — это МАССИВ, а не строка!
   const payload = {
@@ -102,18 +104,29 @@ async function processMail() {
     const lock = await mailClient.getMailboxLock("INBOX");
     
     try {
-      // Ищем непрочитанные письма с темой [TASK]
-      const range = await mailClient.search({ 
-        seen: false,
-        header: { "subject": "[TASK]" }
-      });
+  // Ищем все непрочитанные письма
+  console.log(`🔍 Ищем непрочитанные письма...`);
+  const allUnseen = await mailClient.search({ seen: false });
+  console.log(`📬 Всего непрочитанных: ${allUnseen.length}`);
 
-      console.log(`📬 Писем с темой [TASK]: ${range.length}`);
-      
-      if (range.length === 0) {
-        console.log("📭 Нет писем с темой [TASK]");
-        return 0;
-      }
+  // Фильтруем по теме
+  const range = [];
+  for (const uid of allUnseen) {
+    const message = await mailClient.fetchOne(uid, { envelope: true });
+    const subject = message.envelope.subject || '';
+    if (subject.includes('[TASK]') || subject.includes('Задачи')) {
+      range.push(uid);
+    }
+  }
+
+  console.log(`📬 Писем с темой [TASK] или "Задачи": ${range.length}`);
+  
+  if (range.length === 0) {
+    console.log("📭 Нет писем с темой [TASK] или 'Задачи'");
+    return 0;
+  }
+
+  // ... остальной код обработки ...
 
       let mailText = "";
       const processedUids = [];
