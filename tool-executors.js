@@ -137,14 +137,17 @@ async function addComment(taskId, text) {
   
   try {
     const response = await fetch(
-      `https://rocketup.yougile.com/api-v2/tasks/${taskId}/chat`,
+      `https://rocketup.yougile.com/api-v2/chat-messages`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
         },
-        body: JSON.stringify({ text })
+        body: JSON.stringify({
+          text: text,
+          taskId: taskId
+        })
       }
     );
     
