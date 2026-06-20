@@ -99,9 +99,13 @@ console.log(`📝 Текст письма (первые 300 символов): $
           messages: [
             {
               role: 'system',
-              content: `Проанализируй запрос и реши:
+              content: `Проанализируй запрос и разбей его на ОТДЕЛЬНЫЕ задачи.
+
+Для каждой задачи реши:
 1. Можешь ли ты выполнить эту задачу АВТОНОМНО (используя поиск в интернете, анализ данных)?
 2. Или это задача для человека (требует физических действий, звонков, встреч)?
+
+ВАЖНО: Если в запросе несколько действий — создай несколько задач!
 
 Если можешь выполнить сам:
 - can_execute: true
@@ -114,15 +118,24 @@ console.log(`📝 Текст письма (первые 300 символов): $
 - estimated_time: оценка времени
 - steps: шаги для человека
 
-Верни ТОЛЬКО JSON:
+Верни ТОЛЬКО JSON в формате:
 {
-  "title": "название задачи",
-  "can_execute": true/false,
-  "execution_plan": "план для AI (если can_execute=true)",
-  "tools_needed": ["web_search", "save_result"],
-  "result": "результат (если can_execute=false)",
-  "estimated_time": "время (если can_execute=false)",
-  "steps": ["шаги (если can_execute=false)"]
+  "tasks": [
+    {
+      "title": "название первой задачи",
+      "can_execute": true/false,
+      "execution_plan": "план для AI (если can_execute=true)",
+      "tools_needed": ["web_search"],
+      "result": "результат (если can_execute=false)",
+      "estimated_time": "время (если can_execute=false)",
+      "steps": ["шаги (если can_execute=false)"]
+    },
+    {
+      "title": "название второй задачи",
+      "can_execute": true/false,
+      ...
+    }
+  ]
 }`
             },
             { role: 'user', content: mailText }
@@ -136,90 +149,90 @@ console.log(`📝 Текст письма (первые 300 символов): $
       }
 
       const glmData = await glmResponse.json();
-      const aiResponse = glmData.choices[0].message.content;
+const aiResponse = glmData.choices[0].message.content;
 
-      let taskData;
-      try {
-        const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-        taskData = JSON.parse(jsonMatch ? jsonMatch[0] : aiResponse);
-      } catch (e) {
-        throw new Error(`Не удалось распарсить GLM: ${aiResponse}`);
-      }
-
-      console.log(`🤖 GLM вернул задачу: "${taskData.title}" (can_execute: ${taskData.can_execute})`);
-// 🔍 ОТЛАДКА — полный ответ GLM
-console.log(`🤖 Полный ответ GLM:`, JSON.stringify(taskData, null, 2));
-
-      const createdTasks = [];
-
-      if (taskData.can_execute) {
-        // Задача для AI-агента — создаём в колонке "Ожидает подтверждения"
-        const description = [
-          "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
-          "",
-          "<b>📋 План выполнения:</b>",
-          taskData.execution_plan || "Не указан",
-          "",
-          "<b>🔧 Инструменты:</b>",
-          taskData.tools_needed?.join(', ') || 'web_search',
-          "",
-          "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
-        ].join('<br><br>');
-
-        console.log(`🔧 Отправляю задачу в YouGile...`);
-console.log(`🔧 columnId: "${process.env.COLUMN_AWAITING_CONFIRMATION}"`);
-console.log(`🔧 title: "${taskData.title}"`);
-console.log(`🔧 YOUGILE_GLM_USER_ID: "${process.env.YOUGILE_GLM_USER_ID}"`);
-
-const taskPayload = {
-  title: taskData.title,
-  description,
-  columnId: process.env.COLUMN_AWAITING_CONFIRMATION,
-  stickers: { [AI_STICKER_ID]: "empty" }
-};
-
-// Добавляем assigned только если YOUGILE_GLM_USER_ID установлен
-if (process.env.YOUGILE_GLM_USER_ID) {
-  taskPayload.assigned = [process.env.YOUGILE_GLM_USER_ID];
-  console.log(`🔧 assigned: [${process.env.YOUGILE_GLM_USER_ID}]`);
-} else {
-  console.warn(`⚠️ YOUGILE_GLM_USER_ID не установлен, задача будет без исполнителя`);
+let response;
+try {
+  const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+  response = JSON.parse(jsonMatch ? jsonMatch[0] : aiResponse);
+} catch (e) {
+  throw new Error(`Не удалось распарсить GLM: ${aiResponse}`);
 }
 
-const response = await fetch('https://rocketup.yougile.com/api-v2/tasks', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
-  },
-  body: JSON.stringify(taskPayload)
-});
+// Поддержка обоих форматов (для обратной совместимости)
+const tasks = response.tasks || [response];
 
-const responseText = await response.text();
-console.log(`🔧 YouGile статус: ${response.status}`);
-console.log(`🔧 YouGile ответ: ${responseText}`);
+console.log(`🤖 GLM вернул ${tasks.length} задач`);
 
-if (!response.ok) {
-  console.error(`❌ YouGile ошибка: ${response.status} - ${responseText}`);
-  throw new Error(`YouGile error: ${response.status} - ${responseText}`);
-}
+const createdTasks = [];
 
-const taskResult = JSON.parse(responseText);
-createdTasks.push(taskResult.id);
-console.log(`✅ Задача для AI создана: ${taskResult.id}`);
+for (const taskData of tasks) {
+  console.log(`📋 Задача: "${taskData.title}" (can_execute: ${taskData.can_execute})`);
 
-      } else {
-  // Обычная задача для человека
-  console.log(`🔧 Создаю обычную задачу в колонку: "${process.env.COLUMN_DEFAULT}"`);
-  const taskResult = await createYougileTask({
-    title: taskData.title,
-    result: taskData.result || "Не указано",
-    estimated_time: taskData.estimated_time || "Не указано",
-    steps: taskData.steps || ["Уточнить план"]
-  });
-  console.log(`🔧 YouGile ответ:`, JSON.stringify(taskResult));
-  createdTasks.push(taskResult.id);
-  console.log(`✅ Задача для человека создана: ${taskResult.id}`);
+  if (taskData.can_execute) {
+    // Задача для AI-агента
+    const description = [
+      "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
+      "",
+      "<b>📋 План выполнения:</b>",
+      taskData.execution_plan || "Не указан",
+      "",
+      "<b>🔧 Инструменты:</b>",
+      taskData.tools_needed?.join(', ') || 'web_search',
+      "",
+      "<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'"
+    ].join('<br><br>');
+
+    console.log(`🔧 Отправляю задачу в YouGile...`);
+    console.log(`🔧 columnId: "${process.env.COLUMN_AWAITING_CONFIRMATION}"`);
+    console.log(`🔧 title: "${taskData.title}"`);
+    console.log(`🔧 YOUGILE_GLM_USER_ID: "${process.env.YOUGILE_GLM_USER_ID}"`);
+
+    const taskPayload = {
+      title: taskData.title,
+      description,
+      columnId: process.env.COLUMN_AWAITING_CONFIRMATION,
+      stickers: { [AI_STICKER_ID]: "empty" }
+    };
+
+    if (process.env.YOUGILE_GLM_USER_ID) {
+      taskPayload.assigned = [process.env.YOUGILE_GLM_USER_ID];
+      console.log(`🔧 assigned: [${process.env.YOUGILE_GLM_USER_ID}]`);
+    }
+
+    const taskResponse = await fetch('https://rocketup.yougile.com/api-v2/tasks', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.YOUGILE_API_KEY}`
+      },
+      body: JSON.stringify(taskPayload)
+    });
+
+    const responseText = await taskResponse.text();
+    console.log(`🔧 YouGile статус: ${taskResponse.status}`);
+
+    if (!taskResponse.ok) {
+      console.error(`❌ YouGile ошибка: ${taskResponse.status} - ${responseText}`);
+      continue; // Пропускаем эту задачу, но продолжаем обработку остальных
+    }
+
+    const taskResult = JSON.parse(responseText);
+    createdTasks.push(taskResult.id);
+    console.log(`✅ Задача для AI создана: ${taskResult.id}`);
+
+  } else {
+    // Обычная задача для человека
+    console.log(`🔧 Создаю обычную задачу в колонку: "${process.env.COLUMN_DEFAULT}"`);
+    const taskResult = await createYougileTask({
+      title: taskData.title,
+      result: taskData.result || "Не указано",
+      estimated_time: taskData.estimated_time || "Не указано",
+      steps: taskData.steps || ["Уточнить план"]
+    });
+    createdTasks.push(taskResult.id);
+    console.log(`✅ Задача для человека создана: ${taskResult.id}`);
+  }
 }
 
       await mailClient.messageFlagsAdd(processedUids, ["\\Seen"], { uid: true });
