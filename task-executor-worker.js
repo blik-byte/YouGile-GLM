@@ -12,36 +12,33 @@ async function checkTasksForExecution() {
     console.warn('⚠️ COLUMN_TO_EXECUTE не установлен!');
     return;
   }
-  
-  if (!process.env.COLUMN_TO_EXECUTE) {
-    console.warn('⚠️ COLUMN_TO_EXECUTE не установлен');
-    return;
-  }
 
   try {
-    const response = await fetch(
-      `https://rocketup.yougile.com/api-v2/tasks?columnId=${process.env.COLUMN_TO_EXECUTE}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
-        }
+    const url = `https://rocketup.yougile.com/api-v2/tasks?columnId=${process.env.COLUMN_TO_EXECUTE}`;
+    console.log(`🌐 Запрос: ${url}`);
+    
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
       }
-    );
+    });
 
-    if (!response.ok) {
-      console.error(`❌ YouGile error: ${response.status}`);
+    console.log(`📡 Статус ответа: ${response.status}`);
+    
+    const data = await response.json();
+    console.log(`📦 Ответ API:`, JSON.stringify(data, null, 2).substring(0, 500));
+
+    // Проверяем разные варианты структуры ответа
+    const tasks = data.items || data.tasks || data || [];
+    
+    if (!Array.isArray(tasks) || tasks.length === 0) {
+      console.log(`📭 Нет задач в колонке`);
       return;
     }
 
-    const tasks = await response.json();
+    console.log(`📬 Найдено ${tasks.length} задач для выполнения`);
 
-    if (!tasks.items || tasks.items.length === 0) {
-      return;
-    }
-
-    console.log(`📬 Найдено ${tasks.items.length} задач для выполнения`);
-
-    for (const task of tasks.items) {
+    for (const task of tasks) {
       // Защита от повторов
       if (processedTasks.has(task.id)) {
         console.log(`⏭️ Задача ${task.id} уже обрабатывается, пропускаем`);
