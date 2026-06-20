@@ -190,7 +190,7 @@ async function subscribeToWebhooks() {
         },
         body: JSON.stringify({
           url: webhookUrl,
-          events: ['chat.message.created']
+          event: 'chat.message.created'  // ← строка, не массив!
         })
       }
     );
