@@ -107,6 +107,14 @@ async function updateTaskStatus(taskId, status) {
   }
   
   try {
+    const payload = { columnId };
+    
+    // Если статус "Готово" — помечаем задачу как выполненную
+    if (status === 'Готово') {
+      payload.completed = true;
+      console.log(`✅ Помечаю задачу как выполненную (completed: true)`);
+    }
+    
     const response = await fetch(
       `https://rocketup.yougile.com/api-v2/tasks/${taskId}`,
       {
@@ -115,7 +123,7 @@ async function updateTaskStatus(taskId, status) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
         },
-        body: JSON.stringify({ columnId })
+        body: JSON.stringify(payload)
       }
     );
     
