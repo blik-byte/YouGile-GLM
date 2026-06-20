@@ -136,8 +136,9 @@ async function addComment(taskId, text) {
   console.log(`💬 Текст (первые 200 симв.): ${text.substring(0, 200)}`);
   
   try {
+    // В YouGile chatId = taskId
     const response = await fetch(
-      `https://rocketup.yougile.com/api-v2/chat-messages`,
+      `https://rocketup.yougile.com/api-v2/chats/${taskId}/messages`,
       {
         method: 'POST',
         headers: {
@@ -146,7 +147,8 @@ async function addComment(taskId, text) {
         },
         body: JSON.stringify({
           text: text,
-          taskId: taskId
+          textHtml: `<p>${text.replace(/\n/g, '<br>')}</p>`,
+          label: 'AI'
         })
       }
     );
