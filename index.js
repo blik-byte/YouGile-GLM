@@ -8,12 +8,23 @@ const cors = require('cors');
 const { startEmailWorker, processMail, createYougileTask } = require('./email-worker');
 const { connectToMongo, getStats } = require('./db');
 const { startTaskExecutorWorker } = require('./task-executor-worker');
+const { getTaskResults } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(cors());
+
+// Просмотр результатов задачи
+app.get('/task-results/:taskId', async (req, res) => {
+  try {
+    const results = await getTaskResults(req.params.taskId);
+    res.json({ success: true, count: results.length, results });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
 
 app.get('/columns', async (req, res) => {
   try {
