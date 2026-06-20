@@ -35,6 +35,9 @@ function shouldIgnoreEmail(parsed) {
 
 // Функция создания задачи (для человека)
 async function createYougileTask(taskData, columnId = process.env.COLUMN_DEFAULT) {
+  const executionPlan = (taskData.execution_plan || "Не указан")
+  .replace(/\n+/g, '<br>')
+  .replace(/<br><br>/g, '<br>');
   const description = [
   "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
   "",
@@ -178,23 +181,41 @@ async function processMail() {
 ВАЖНО: Если в запросе несколько действий — создай несколько задач!
 
 Для каждой задачи:
-- Если можешь выполнить АВТОНОМНО (поиск, анализ): can_execute: true, execution_plan, tools_needed
-- Если задача для человека: can_execute: false, result, estimated_time, steps
+- Если можешь выполнить АВТОНОМНО (поиск, анализ): 
+  - can_execute: true
+  - execution_plan: массив подробных шагов (ОБЯЗАТЕЛЬНО массив строк!)
+  - tools_needed: массив инструментов
+
+- Если задача для человека: 
+  - can_execute: false
+  - result: что получится
+  - estimated_time: оценка времени
+  - steps: массив шагов
 
 Верни ТОЛЬКО JSON:
 {
   "tasks": [
     {
-      "title": "название",
-      "can_execute": true/false,
-      "execution_plan": "план (если true)",
-      "tools_needed": ["web_search"],
-      "result": "результат (если false)",
-      "estimated_time": "время (если false)",
-      "steps": ["шаги (если false)"]
+      "title": "краткое название задачи",
+      "can_execute": true,
+      "execution_plan": [
+        "Шаг 1: подробное описание",
+        "Шаг 2: подробное описание",
+        "Шаг 3: подробное описание"
+      ],
+      "tools_needed": ["web_search", "web_analysis"]
+    },
+    {
+      "title": "вторая задача",
+      "can_execute": false,
+      "result": "что получится в итоге",
+      "estimated_time": "2-3 часа",
+      "steps": ["шаг 1", "шаг 2", "шаг 3"]
     }
   ]
-}`
+}
+
+ВАЖНО: execution_plan ВСЕГДА должен быть МАССИВОМ строк, даже если один шаг!`
               },
               { role: 'user', content: mailText }
             ],
