@@ -188,17 +188,11 @@ app.post('/webhook/yougile', async (req, res) => {
     
     const event = req.body;
     
-    if (event.event === 'chat.message.created') {
-      const { chatId, message } = event.data;
+    // ✅ Правильное имя события: chat_message-created
+    if (event.event === 'chat_message-created') {
+      const { text, chatId } = event.payload;
       
-      // Игнорируем сообщения от самого AI
-      if (message.author?.email?.includes('ai.assistant') || 
-          message.author?.name?.toLowerCase().includes('ai')) {
-        console.log(`💬 Игнорируем сообщение от AI в чате ${chatId}`);
-        return res.json({ success: true, ignored: true });
-      }
-      
-      console.log(`💬 Новое сообщение в чате ${chatId}: ${message.text?.substring(0, 100)}`);
+      console.log(`💬 Новое сообщение в чате ${chatId}: ${text?.substring(0, 100)}`);
       
       // Получаем задачу
       const taskResponse = await fetch(
@@ -259,7 +253,7 @@ app.post('/webhook/yougile', async (req, res) => {
       // Добавляем комментарий о начале работы
       await executors.addComment(chatId, '🤖 AI-агент обрабатывает ваш вопрос...');
       
-      // Запускаем агента в режиме "ответ на вопрос"
+      // ✅ Правильный импорт (после исправления дубля)
       const { runAgentForQuestion } = require('./ai-agent');
       const answer = await runAgentForQuestion(
         chatId,
