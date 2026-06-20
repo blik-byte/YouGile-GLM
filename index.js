@@ -182,18 +182,36 @@ app.get('/health', (req, res) => {
 });
 
 // Webhook для получения событий от YouGile
+// Защита от дублей webhook'ов
+const processedMessages = new Set();
+const recentWebhooks = new Map(); // messageId → timestamp
+
 app.post('/webhook/yougile', async (req, res) => {
   try {
-    console.log('📨 Получен webhook от YouGile:', JSON.stringify(req.body).substring(0, 300));
-    
     const event = req.body;
     
     if (event.event === 'chat_message-created') {
       const { text, chatId, label, id: messageId, properties } = event.payload;
       
-      // ✅ Игнорируем системные сообщения (перемещение задачи и т.д.)
+      // ✅ Дедупликация: если этот messageId уже обрабатывался за последние 10 секунд — игнорируем
+      const now = Date.now();
+      if (recentWebhooks.has(messageId)) {
+        const lastTime = recentWebhooks.get(messageId);
+        if (now - lastTime < 10000) {
+          return res.json({ success: true, duplicate: true });
+        }
+      }
+      recentWebhooks.set(messageId, now);
+      
+      // Очистка старых записей (старше 1 минуты)
+      for (const [key, time] of recentWebhooks.entries()) {
+        if (now - time > 60000) {
+          recentWebhooks.delete(key);
+        }
+      }
+      
+      // ✅ Игнорируем системные сообщения
       if (properties?.fromSystem || properties?.move) {
-        console.log(`⚙️ Игнорируем системное сообщение в чате ${chatId}`);
         return res.json({ success: true, ignored: true });
       }
       
@@ -203,22 +221,7 @@ app.post('/webhook/yougile', async (req, res) => {
           text?.includes('💡 Ответ:') ||
           text === '.' ||
           !text?.trim()) {
-        console.log(`💬 Игнорируем сообщение от AI или пустое в чате ${chatId}`);
         return res.json({ success: true, ignored: true });
-      }
-      
-      // ✅ Защита от повторной обработки одного сообщения
-      const messageKey = `${chatId}-${messageId}`;
-      if (processedMessages.has(messageKey)) {
-        console.log(`⏭️ Сообщение ${messageId} уже обработано, пропускаем`);
-        return res.json({ success: true, skipped: true });
-      }
-      processedMessages.add(messageKey);
-      
-      // Очистка старых записей (защита от утечки памяти)
-      if (processedMessages.size > 1000) {
-        const firstKey = processedMessages.values().next().value;
-        processedMessages.delete(firstKey);
       }
       
       console.log(`💬 Новое сообщение в чате ${chatId}: ${text?.substring(0, 100)}`);
@@ -240,13 +243,12 @@ app.post('/webhook/yougile', async (req, res) => {
       
       const task = await taskResponse.json();
       
-      // Проверяем, что задача выполнена
       if (!task.completed) {
         console.log(`⏭️ Задача ${chatId} не выполнена, пропускаем`);
         return res.json({ success: true, skipped: true });
       }
       
-      // Получаем историю чата
+      // ✅ Получаем историю чата с детальным логированием
       const chatResponse = await fetch(
         `https://rocketup.yougile.com/api-v2/chats/${chatId}/messages`,
         {
@@ -257,34 +259,63 @@ app.post('/webhook/yougile', async (req, res) => {
       );
       
       if (!chatResponse.ok) {
-        console.error(`❌ Не удалось получить чат ${chatId}`);
+        console.error(`❌ Не удалось получить чат ${chatId}: ${chatResponse.status}`);
         return res.json({ success: false, error: 'Chat not found' });
       }
       
       const chatData = await chatResponse.json();
-      const chatMessages = chatData.items || chatData.messages || [];
       
-      // Проверяем, что последнее сообщение от пользователя (не от AI)
-      const lastMessage = chatMessages[chatMessages.length - 1];
-      if (lastMessage?.label === 'AI' ||
-          lastMessage?.text?.includes('🤖 AI-агент') ||
-          lastMessage?.text?.includes('💡 Ответ:')) {
-        console.log(`💬 Последнее сообщение от AI, пропускаем`);
-        return res.json({ success: true, skipped: true });
+      // ✅ Логируем структуру ответа для отладки
+      console.log(`📋 Структура ответа чата:`, JSON.stringify(chatData).substring(0, 500));
+      
+      // Пробуем разные варианты структуры
+      let chatMessages = [];
+      if (Array.isArray(chatData)) {
+        chatMessages = chatData;
+      } else if (chatData.items) {
+        chatMessages = chatData.items;
+      } else if (chatData.messages) {
+        chatMessages = chatData.messages;
+      } else if (chatData.content) {
+        chatMessages = chatData.content;
       }
       
-      // Формируем контекст для агента
-      const chatContext = chatMessages
-        .filter(msg => msg.label !== 'AI' && !msg.text?.includes('🤖 AI-агент'))
-        .map(msg => `${msg.author?.name || 'Unknown'}: ${msg.text}`)
+      console.log(`📋 Найдено ${chatMessages.length} сообщений в чате`);
+      
+      // ✅ Фильтруем только пользовательские сообщения
+      const userMessages = chatMessages.filter(msg => {
+        const isAI = msg.label === 'AI' || 
+                     msg.text?.includes('🤖 AI-агент') ||
+                     msg.text?.includes('💡 Ответ:') ||
+                     msg.author?.email?.includes('ai.assistant') ||
+                     msg.author?.name?.toLowerCase().includes('ai');
+        return !isAI && msg.text?.trim();
+      });
+      
+      console.log(`📋 Пользовательских сообщений: ${userMessages.length}`);
+      
+      if (userMessages.length === 0) {
+        console.log(`⚠️ Нет пользовательских сообщений в чате`);
+        return res.json({ success: true, noUserMessages: true });
+      }
+      
+      // Формируем контекст
+      const chatContext = userMessages
+        .slice(-10) // Последние 10 сообщений
+        .map(msg => {
+          const author = msg.author?.name || msg.sender?.name || 'Пользователь';
+          return `${author}: ${msg.text}`;
+        })
         .join('\n');
+      
+      console.log(`📋 Контекст чата (${chatContext.length} симв.):`, chatContext.substring(0, 300));
       
       console.log(`🤖 Запускаю агента для ответа на вопрос в задаче ${chatId}`);
       
       // Добавляем комментарий о начале работы
       await executors.addComment(chatId, '🤖 AI-агент обрабатывает ваш вопрос...');
       
-      // Запускаем агента в режиме "ответ на вопрос"
+      // Запускаем агента
       const { runAgentForQuestion } = require('./ai-agent');
       const answer = await runAgentForQuestion(
         chatId,
