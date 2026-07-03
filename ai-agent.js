@@ -1,36 +1,24 @@
 // ai-agent.js
 const tools = require('./tools');
 const executors = require('./tool-executors');
+const { getPromptForTask } = require('./prompts');
 
 async function runAgent(taskId, taskTitle, taskDescription) {
   console.log(`🤖 Агент запущен для задачи: ${taskTitle}`);
   
+  // ✅ Выбираем промпт по типу задачи
+  const systemPrompt = getPromptForTask(taskTitle, taskDescription);
+  
   const messages = [
-  {
-    role: 'system',
-    content: `Ты AI-агент, который выполняет задачи шаг за шагом.
-
-Задача: ${taskTitle}
-Описание: ${taskDescription}
-ID задачи: ${taskId}
-
-Правила:
-1. Используй инструменты для выполнения шагов
-2. После каждого важного шага сохраняй результат через save_result (используй taskId: ${taskId})
-3. Добавляй комментарии о прогрессе через add_comment (используй taskId: ${taskId})
-4. Когда задача выполнена — вызови update_task_status с taskId: ${taskId} и status: "Готово"
-5. Если ошибка — вызови update_task_status с taskId: ${taskId} и status: "Ошибка"
-6. Для web_search используй конкретные запросы, не общие фразы
-7. НЕ повторяй один и тот же запрос
-8. ВАЖНО: Всегда используй реальный ID задачи: ${taskId}, а не придумывай свой!
-
-Действуй пошагово. После каждого шага думай, что делать дальше.`
-  },
-  {
-    role: 'user',
-    content: `Начни выполнение задачи с ID: ${taskId}. Используй инструменты для поиска информации и сохранения результатов.`
-  }
-];
+    {
+      role: 'system',
+      content: systemPrompt
+    },
+    {
+      role: 'user',
+      content: `Задача: ${taskTitle}\n\nОписание: ${taskDescription}\n\nID задачи: ${taskId}\n\nНачни выполнение.`
+    }
+  ];
 
   let maxSteps = 15;
   let stepCount = 0;
