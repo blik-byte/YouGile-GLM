@@ -13,6 +13,12 @@ const mailClient = new ImapFlow({
   }
 });
 
+// ✅ ВРЕМЕННАЯ ОТЛАДКА (удалить после проверки!)
+console.log(`🔧 MAIL_USER: ${process.env.MAIL_USER}`);
+console.log(`🔧 MAIL_PASSWORD длина: ${process.env.MAIL_PASSWORD?.length || 0} символов`);
+console.log(`🔧 MAIL_PASSWORD первые 5 символов: ${process.env.MAIL_PASSWORD?.substring(0, 5)}`);
+console.log(`🔧 MAIL_PASSWORD содержит "hidden": ${process.env.MAIL_PASSWORD?.includes('hidden')}`);
+
 // ✅ Обработчик ошибок соединения (глобально)
 mailClient.on('error', (err) => {
   console.error(`❌ IMAP error: ${err.message}`);
