@@ -11,7 +11,7 @@ function createMailClient() {
   console.log(`🔧 [createMailClient] MAIL_PASSWORD содержит "hidden": ${process.env.MAIL_PASSWORD?.includes('hidden')}`);
   
   const client = new ImapFlow({
-    host: 'outlook.office365.com',
+    host: 'mail.fl.h12.ose.su',
     port: 993,
     secure: true,
     auth: {
