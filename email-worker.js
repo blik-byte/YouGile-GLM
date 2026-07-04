@@ -27,11 +27,6 @@ console.log(`🔧 MAIL_PASSWORD длина: ${process.env.MAIL_PASSWORD?.length 
 console.log(`🔧 MAIL_PASSWORD первые 5 символов: ${process.env.MAIL_PASSWORD?.substring(0, 5)}`);
 console.log(`🔧 MAIL_PASSWORD содержит "hidden": ${process.env.MAIL_PASSWORD?.includes('hidden')}`);
 
-// ✅ Обработчик ошибок соединения (глобально)
-mailClient.on('error', (err) => {
-  console.error(`❌ IMAP error: ${err.message}`);
-});
-
 let isProcessing = false;
 const AI_STICKER_ID = "c553a657-fa54-4532-9d02-4750e013005f";
 
