@@ -293,6 +293,14 @@ ID задачи: ${taskId}
           result = await executors.updateTaskStatus(args.taskId || taskId, args.status);
         } else if (call.function.name === 'add_comment') {
           result = await executors.addComment(args.taskId || taskId, args.text);
+          } else if (call.function.name === 'create_document') {  // ← ДОБАВЬ ЭТО
+  result = await executors.createDocument(
+    args.format,
+    args.filename,
+    args.title || '',
+    args.content || '',
+    args.tables || []
+  );
         } else {
           result = { error: `Unknown tool: ${call.function.name}` };
         }
