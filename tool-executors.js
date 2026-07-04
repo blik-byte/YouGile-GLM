@@ -1,7 +1,5 @@
 // tool-executors.js
 const db = require('./db');
-const { webSearch } = require('./web-search');
-const { saveResult, addComment, updateTaskStatus } = require('./yougile-api');
 const { createDocx, createXlsx, createTxt } = require('./document-generator');  // ← ДОБАВЬ ЭТО
 const { uploadFile } = require('./drive-client');  // ← ДОБАВЬ ЭТО
 const fs = require('fs');
