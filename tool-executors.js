@@ -1,7 +1,10 @@
 // tool-executors.js
 const db = require('./db');
-// Убери строку с pcloud-client, если была
-const { uploadFile } = require('./drive-client');
+const { webSearch } = require('./web-search');
+const { saveResult, addComment, updateTaskStatus } = require('./yougile-api');
+const { createDocx, createXlsx, createTxt } = require('./document-generator');  // ← ДОБАВЬ ЭТО
+const { uploadFile } = require('./drive-client');  // ← ДОБАВЬ ЭТО
+const fs = require('fs');
 
 // Функция createDocument остаётся почти такой же:
 async function createDocument(format, filename, title = '', content = '', tables = []) {
