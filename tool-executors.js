@@ -1,5 +1,6 @@
 // tool-executors.js
 const db = require('./db');
+const { uploadFile } = require('./drive-client');
 
 // 🔍 Умный поиск с кэшем и fallback
 async function webSearch(query) {
