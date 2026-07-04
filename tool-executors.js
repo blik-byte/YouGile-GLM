@@ -1,6 +1,49 @@
 // tool-executors.js
 const db = require('./db');
+// Убери строку с pcloud-client, если была
 const { uploadFile } = require('./drive-client');
+
+// Функция createDocument остаётся почти такой же:
+async function createDocument(format, filename, title = '', content = '', tables = []) {
+  console.log(`📄 Создаю документ ${filename}.${format}...`);
+  
+  try {
+    let filePath;
+    
+    if (format === 'docx') {
+      filePath = await createDocx(filename, title, content);
+    } else if (format === 'xlsx') {
+      filePath = await createXlsx(filename, tables);
+    } else if (format === 'txt') {
+      filePath = await createTxt(filename, content);
+    } else {
+      throw new Error(`Неподдерживаемый формат: ${format}`);
+    }
+    
+    // Загружаем в Google Drive
+    const result = await uploadFile(filePath, `${filename}.${format}`);
+    
+    // Удаляем локальный файл
+    fs.unlinkSync(filePath);
+    
+    if (result.success) {
+      console.log(`✅ Документ доступен: ${result.link}`);
+      return {
+        success: true,
+        link: result.link,
+        downloadLink: result.downloadLink,
+        filename: `${filename}.${format}`,
+        fileId: result.fileId
+      };
+    } else {
+      throw new Error(result.error);
+    }
+    
+  } catch (error) {
+    console.error(`❌ Ошибка создания документа: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+}
 
 // 🔍 Умный поиск с кэшем и fallback
 async function webSearch(query) {
