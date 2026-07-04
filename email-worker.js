@@ -4,6 +4,12 @@ const { simpleParser } = require("mailparser");
 
 // ✅ Функция создания клиента (вызывается каждый раз)
 function createMailClient() {
+  console.log(`🔧 [createMailClient] Создаю клиент...`);
+  console.log(`🔧 [createMailClient] MAIL_USER: ${process.env.MAIL_USER}`);
+  console.log(`🔧 [createMailClient] MAIL_PASSWORD длина: ${process.env.MAIL_PASSWORD?.length || 0}`);
+  console.log(`🔧 [createMailClient] MAIL_PASSWORD первые 5 символов: ${process.env.MAIL_PASSWORD?.substring(0, 5)}`);
+  console.log(`🔧 [createMailClient] MAIL_PASSWORD содержит "hidden": ${process.env.MAIL_PASSWORD?.includes('hidden')}`);
+  
   const client = new ImapFlow({
     host: 'outlook.office365.com',
     port: 993,
