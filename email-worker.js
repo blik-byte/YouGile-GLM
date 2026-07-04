@@ -476,21 +476,7 @@ if (createdTasks.length === tasks.length) {
 // IDLE-цикл для мгновенной реакции
 async function runIdleLoop() {
   while (true) {
-    const mailClient = new ImapFlow({
-      host: "outlook.office365.com",
-      port: 993,
-      secure: true,
-      auth: {
-        user: process.env.MAIL_USER,
-        pass: process.env.MAIL_PASSWORD
-      }
-    });
-
-    // ✅ Обработчик ошибок соединения
-    mailClient.on('error', (err) => {
-      console.error(`❌ IMAP connection error: ${err.message}`);
-    });
-
+    // ✅ Используем ГЛОБАЛЬНЫЙ mailClient, а не создаём новый
     try {
       await mailClient.connect();
       const lock = await mailClient.getMailboxLock("INBOX");
@@ -518,6 +504,7 @@ async function runIdleLoop() {
     await new Promise(r => setTimeout(r, 5000));
   }
 }
+
 
 // Запуск worker'а
 async function startEmailWorker() {
