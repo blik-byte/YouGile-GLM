@@ -52,6 +52,48 @@ const tools = [
     }
   },
   {
+  type: "function",
+  function: {
+    name: "create_document",
+    description: "Создать документ (docx/xlsx/txt) и загрузить в облако. Возвращает публичную ссылку.",
+    parameters: {
+      type: "object",
+      properties: {
+        format: { 
+          type: "string", 
+          enum: ["docx", "xlsx", "txt"],
+          description: "Формат файла" 
+        },
+        filename: { 
+          type: "string", 
+          description: "Имя файла (без расширения)" 
+        },
+        title: { 
+          type: "string", 
+          description: "Заголовок документа (для docx)" 
+        },
+        content: { 
+          type: "string", 
+          description: "Содержимое документа (для docx/txt, можно использовать markdown)" 
+        },
+        tables: {
+          type: "array",
+          description: "Массив таблиц для xlsx: [{name, headers, rows}]",
+          items: { 
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              headers: { type: "array", items: { type: "string" } },
+              rows: { type: "array", items: { type: "array", items: { type: "string" } } }
+            }
+          }
+        }
+      },
+      required: ["format", "filename"]
+    }
+  }
+},
+  {
     type: "function",
     function: {
       name: "add_comment",
