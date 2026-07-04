@@ -470,7 +470,7 @@ if (createdTasks.length === tasks.length) {
 async function runIdleLoop() {
   while (true) {
     const mailClient = new ImapFlow({
-      host: "imap.mail.ru",
+      host: "outlook.office365.com",
       port: 993,
       secure: true,
       auth: {
