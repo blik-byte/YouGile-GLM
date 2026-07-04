@@ -2,6 +2,22 @@
 const { ImapFlow } = require("imapflow");
 const { simpleParser } = require("mailparser");
 
+// ✅ Создаём mailClient ГЛОБАЛЬНО (в начале файла)
+const mailClient = new ImapFlow({
+  host: 'outlook.office365.com',
+  port: 993,
+  secure: true,
+  auth: {
+    user: process.env.MAIL_USER,
+    pass: process.env.MAIL_PASSWORD
+  }
+});
+
+// ✅ Обработчик ошибок соединения (глобально)
+mailClient.on('error', (err) => {
+  console.error(`❌ IMAP error: ${err.message}`);
+});
+
 let isProcessing = false;
 const AI_STICKER_ID = "c553a657-fa54-4532-9d02-4750e013005f";
 
@@ -107,15 +123,6 @@ async function processMail() {
   }
 
 isProcessing = true;
-const mailClient = new ImapFlow({
-  host: 'outlook.office365.com',
-  port: 993,
-  secure: true,
-  auth: {
-    user: process.env.MAIL_USER,
-    pass: process.env.MAIL_PASSWORD
-  }
-});
 
 // ✅ Обработчик ошибок соединения
 mailClient.on('error', (err) => {
