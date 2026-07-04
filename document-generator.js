@@ -1,5 +1,5 @@
 // document-generator.js
-const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell } = require('docx');
+const { Document, Packer, Paragraph, TextRun, HeadingLevel } = require('docx');
 const ExcelJS = require('exceljs');
 const fs = require('fs');
 const path = require('path');
@@ -62,7 +62,6 @@ async function createXlsx(filename, tables) {
   for (const table of tables) {
     const sheet = workbook.addWorksheet(table.name || 'Данные');
     
-    // Заголовки
     if (table.headers && table.headers.length > 0) {
       sheet.addRow(table.headers);
       sheet.getRow(1).font = { bold: true };
@@ -73,14 +72,12 @@ async function createXlsx(filename, tables) {
       };
     }
     
-    // Данные
     if (table.rows && table.rows.length > 0) {
       for (const row of table.rows) {
         sheet.addRow(row);
       }
     }
     
-    // Автоширина колонок
     sheet.columns.forEach(column => {
       column.width = 20;
     });
