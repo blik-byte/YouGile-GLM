@@ -2,16 +2,24 @@
 const { ImapFlow } = require("imapflow");
 const { simpleParser } = require("mailparser");
 
-// ✅ Создаём mailClient ГЛОБАЛЬНО (в начале файла)
-const mailClient = new ImapFlow({
-  host: 'outlook.office365.com',
-  port: 993,
-  secure: true,
-  auth: {
-    user: process.env.MAIL_USER,
-    pass: process.env.MAIL_PASSWORD
-  }
-});
+// ✅ Функция создания клиента (вызывается каждый раз)
+function createMailClient() {
+  const client = new ImapFlow({
+    host: 'outlook.office365.com',
+    port: 993,
+    secure: true,
+    auth: {
+      user: process.env.MAIL_USER,
+      pass: process.env.MAIL_PASSWORD
+    }
+  });
+  
+  client.on('error', (err) => {
+    console.error(`❌ IMAP error: ${err.message}`);
+  });
+  
+  return client;
+}
 
 // ✅ ВРЕМЕННАЯ ОТЛАДКА (удалить после проверки!)
 console.log(`🔧 MAIL_USER: ${process.env.MAIL_USER}`);
@@ -130,13 +138,11 @@ async function processMail() {
 
 isProcessing = true;
 
-// ✅ Обработчик ошибок соединения
-mailClient.on('error', (err) => {
-  console.error(`❌ IMAP error in processMail: ${err.message}`);
-});
+// ✅ Создаём НОВЫЙ клиент на каждый вызов
+  const mailClient = createMailClient();
 
-try {
-  await mailClient.connect();
+  try {
+    await mailClient.connect();
     console.log("✅ IMAP подключен");
 
     const lock = await mailClient.getMailboxLock("INBOX");
@@ -482,7 +488,9 @@ if (createdTasks.length === tasks.length) {
 // IDLE-цикл для мгновенной реакции
 async function runIdleLoop() {
   while (true) {
-    // ✅ Используем ГЛОБАЛЬНЫЙ mailClient, а не создаём новый
+    // ✅ Создаём НОВЫЙ клиент для IDLE
+    const mailClient = createMailClient();
+    
     try {
       await mailClient.connect();
       const lock = await mailClient.getMailboxLock("INBOX");
@@ -510,7 +518,6 @@ async function runIdleLoop() {
     await new Promise(r => setTimeout(r, 5000));
   }
 }
-
 
 // Запуск worker'а
 async function startEmailWorker() {
