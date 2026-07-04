@@ -107,7 +107,7 @@ async function processMail() {
   }
 
 isProcessing = true;
-const client = new ImapFlow({
+const mailClient = new ImapFlow({
   host: 'outlook.office365.com',
   port: 993,
   secure: true,
