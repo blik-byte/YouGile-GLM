@@ -254,5 +254,6 @@ module.exports = {
   saveResult,
   updateTaskStatus,
   addComment,
-  subscribeToWebhooks
+  subscribeToWebhooks,
+  createDocument
 };
