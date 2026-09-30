@@ -12,7 +12,8 @@
     "dev": "node --watch index.js",
     "check": "node scripts/check.js",
     "pcloud:token": "node scripts/get-pcloud-token.js",
-    "test": "node scripts/test-fixes.js && node scripts/test-features.js"
+    "test": "node scripts/test-fixes.js && node scripts/test-features.js && node scripts/test-prod-issues.js",
+    "test:prod": "node scripts/test-prod-issues.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

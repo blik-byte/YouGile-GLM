@@ -37,6 +37,93 @@ let connectPromise = null;
 let clientRef = null;
 
 /**
+ * Определения индексов.
+ *
+ * Каждому индексу задано ЯВНОЕ имя. Прежний вариант полагался на автоматически
+ * генерируемые имена и падал на старте в проде:
+ *   "An existing index has the same name as the requested index...
+ *    Requested: {unique:true, key:{taskId:1}, name:'taskId_1'},
+ *    existing:  {key:{taskId:1}, name:'taskId_1'}"
+ * — то есть неуникальный индекс task_history.taskId, созданный старой версией,
+ * конфликтовал с новым уникальным, и подключение к базе не выполнялось вовсе.
+ */
+const INDEX_DEFINITIONS = [
+  { collection: COLLECTIONS.results, keys: { taskId: 1, timestamp: -1 }, name: 'taskId_timestamp' },
+  { collection: COLLECTIONS.history, keys: { taskId: 1 }, name: 'uniq_taskId', options: { unique: true } },
+  {
+    collection: COLLECTIONS.searchCache,
+    keys: { timestamp: 1 },
+    name: 'ttl_timestamp',
+    options: { expireAfterSeconds: 7 * 24 * 3600 },
+  },
+  { collection: COLLECTIONS.searchCache, keys: { query: 1 }, name: 'uniq_query', options: { unique: true } },
+  { collection: COLLECTIONS.webhookEvents, keys: { messageId: 1 }, name: 'uniq_messageId', options: { unique: true } },
+  {
+    collection: COLLECTIONS.webhookEvents,
+    keys: { createdAt: 1 },
+    name: 'ttl_createdAt',
+    options: { expireAfterSeconds: 3600 },
+  },
+  { collection: COLLECTIONS.taskRuns, keys: { taskId: 1 }, name: 'uniq_taskId', options: { unique: true } },
+  { collection: COLLECTIONS.botAccess, keys: { chatId: 1 }, name: 'uniq_chatId', options: { unique: true } },
+  { collection: COLLECTIONS.botRequests, keys: { chatId: 1 }, name: 'uniq_chatId', options: { unique: true } },
+  { collection: COLLECTIONS.agentRuns, keys: { startedAt: -1 }, name: 'startedAt_desc' },
+  { collection: COLLECTIONS.agentRuns, keys: { taskId: 1, startedAt: -1 }, name: 'taskId_startedAt' },
+];
+
+/**
+ * Создание индексов.
+ * Сбой одного индекса не мешает подключиться к базе: приложение должно подниматься
+ * даже на «грязной» коллекции, а не падать на старте.
+ *
+ * @param {import('mongodb').Db} db
+ */
+async function createIndexes(db) {
+  for (const definition of INDEX_DEFINITIONS) {
+    const collection = db.collection(definition.collection);
+    const options = { name: definition.name, ...(definition.options || {}) };
+    const label = `${definition.collection}.${definition.name}`;
+
+    try {
+      await collection.createIndex(definition.keys, options);
+      continue;
+    } catch (error) {
+      // 85 = IndexOptionsConflict, 86 = IndexKeySpecsConflict
+      const isConflict =
+        error.code === 85 || error.code === 86 || /same name as the requested index/i.test(error.message);
+
+      if (!isConflict) {
+        console.warn(`⚠️ Индекс ${label}: ${error.message}`);
+        continue;
+      }
+    }
+
+    // Конфликт с индексом от предыдущей версии схемы: удаляем старый и создаём нужный.
+    // Данные коллекции при этом не затрагиваются.
+    try {
+      const legacyName = Object.keys(definition.keys)
+        .map((key) => `${key}_${definition.keys[key]}`)
+        .join('_');
+
+      await collection.dropIndex(definition.name).catch(() => {});
+      if (legacyName !== definition.name) {
+        await collection.dropIndex(legacyName).catch(() => {});
+      }
+
+      await collection.createIndex(definition.keys, options);
+      console.log(`♻️ Индекс ${label} пересоздан (конфликт со старой схемой)`);
+    } catch (error) {
+      // Уникальный индекс может не создаться, если в коллекции уже есть дубликаты.
+      // Это не повод ронять приложение — логируем и работаем дальше.
+      console.warn(
+        `⚠️ Не удалось создать индекс ${label}: ${error.message}` +
+          (definition.options?.unique ? ' (возможно, в коллекции есть дубликаты)' : '')
+      );
+    }
+  }
+}
+
+/**
  * Подключение к MongoDB (идемпотентное, без гонок).
  * @returns {Promise<import('mongodb').Db>}
  */
@@ -62,21 +149,7 @@ function connectToMongo() {
 
     const db = client.db(config.mongoDbName);
 
-    await Promise.all([
-      db.collection(COLLECTIONS.results).createIndex({ taskId: 1, timestamp: -1 }),
-      db.collection(COLLECTIONS.history).createIndex({ taskId: 1 }, { unique: true }),
-      // Кэш поиска устаревает через 7 дней и удаляется самим Mongo
-      db.collection(COLLECTIONS.searchCache).createIndex({ timestamp: 1 }, { expireAfterSeconds: 7 * 24 * 3600 }),
-      db.collection(COLLECTIONS.searchCache).createIndex({ query: 1 }, { unique: true }),
-      // События вебхуков живут час — этого хватает на все ретраи YouGile
-      db.collection(COLLECTIONS.webhookEvents).createIndex({ messageId: 1 }, { unique: true }),
-      db.collection(COLLECTIONS.webhookEvents).createIndex({ createdAt: 1 }, { expireAfterSeconds: 3600 }),
-      db.collection(COLLECTIONS.taskRuns).createIndex({ taskId: 1 }, { unique: true }),
-      db.collection(COLLECTIONS.botAccess).createIndex({ chatId: 1 }, { unique: true }),
-      db.collection(COLLECTIONS.botRequests).createIndex({ chatId: 1 }, { unique: true }),
-      db.collection(COLLECTIONS.agentRuns).createIndex({ startedAt: -1 }),
-      db.collection(COLLECTIONS.agentRuns).createIndex({ taskId: 1, startedAt: -1 }),
-    ]);
+    await createIndexes(db);
 
     console.log('✅ MongoDB подключена');
     return db;
@@ -441,6 +514,8 @@ async function countAccess() {
 
 module.exports = {
   COLLECTIONS,
+  INDEX_DEFINITIONS,
+  createIndexes,
   connectToMongo,
   getDb,
   close,

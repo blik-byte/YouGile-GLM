@@ -39,6 +39,82 @@ const IGNORE_SENDERS = [
 /* IMAP-клиент                                                         */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Опции подключения ImapFlow.
+ * Вынесены в отдельную функцию, чтобы их можно было проверить тестом
+ * без реального подключения к почтовому серверу.
+ */
+function buildImapOptions() {
+  return {
+    host: config.mailHost,
+    port: config.mailPort,
+    secure: true,
+    auth: {
+      user: config.mailUser,
+      pass: config.mailPassword,
+    },
+    // Имя для SNI и проверки сертификата. Нужно, когда сервер отдаёт сертификат
+    // на родительский домен: подключение идёт к mail.fl.h12.ose.su, а в сертификате
+    // значится только DNS:h12.ose.su. Без этой опции Node отклоняет соединение:
+    //   "Hostname/IP does not match certificate's altnames".
+    // Важно: проверка цепочки сертификатов при этом остаётся ВКЛЮЧЁННОЙ —
+    // это не отключение безопасности, а указание правильного имени.
+    ...(config.mailTlsServername ? { servername: config.mailTlsServername } : {}),
+    tls: {
+      // Полное отключение проверки — только по явному флагу MAIL_TLS_INSECURE.
+      // Прежде здесь было захардкожено rejectUnauthorized: false (риск MITM).
+      rejectUnauthorized: !config.mailTlsInsecure,
+      ...(config.mailTlsServername ? { servername: config.mailTlsServername } : {}),
+    },
+    connectionTimeout: 30000,
+    socketTimeout: 60000,
+    logger: false,
+  };
+}
+
+/**
+ * Разбирает ошибку проверки сертификата и достаёт из неё имена,
+ * для которых сертификат действительно выдан.
+ * @returns {{names: string[], suggestion: string|null}|null}
+ */
+function describeCertificateProblem(message) {
+  const text = String(message || '');
+  if (!/altnames|certificate|self.signed|unable to verify/i.test(text)) return null;
+
+  const names = [...text.matchAll(/DNS:([^\s,]+)/g)].map((match) => match[1]);
+  return { names, suggestion: names.length > 0 ? names[0] : null };
+}
+
+let certHintShown = false;
+
+/**
+ * Печатает подсказку с готовым значением переменной окружения.
+ * Один раз за время жизни процесса — иначе лог забивается повторами.
+ */
+function hintCertificateProblem(message) {
+  const problem = describeCertificateProblem(message);
+  if (!problem || certHintShown) return;
+
+  certHintShown = true;
+
+  console.error('');
+  console.error('╔════════════════════════════════════════════════════════════════════');
+  console.error('║ Почтовый сервер отдаёт сертификат на другое имя, чем MAIL_HOST.');
+  console.error(`║ Хост подключения    : ${config.mailHost}`);
+  console.error(`║ Имена в сертификате : ${problem.names.length > 0 ? problem.names.join(', ') : 'не распознаны'}`);
+  if (problem.suggestion) {
+    console.error('║');
+    console.error('║ Исправление — добавить на Render переменную окружения:');
+    console.error(`║   MAIL_TLS_SERVERNAME=${problem.suggestion}`);
+    console.error('║ Проверка цепочки сертификатов останется включённой.');
+  }
+  console.error('║');
+  console.error('║ Крайний вариант (отключает проверку целиком, не рекомендуется):');
+  console.error('║   MAIL_TLS_INSECURE=true');
+  console.error('╚════════════════════════════════════════════════════════════════════');
+  console.error('');
+}
+
 function createMailClient() {
   if (!config.mailUser || !config.mailPassword) {
     throw new Error('MAIL_USER или MAIL_PASSWORD не заданы — почтовый воркер не может работать');
@@ -47,26 +123,11 @@ function createMailClient() {
   // Никакого логирования пароля: ни длины, ни первых символов, ни факта наличия.
   console.log(`🔧 IMAP: подключаюсь к ${config.mailHost}:${config.mailPort} как ${config.mailUser}`);
 
-  const client = new ImapFlow({
-    host: config.mailHost,
-    port: config.mailPort,
-    secure: true,
-    auth: {
-      user: config.mailUser,
-      pass: config.mailPassword,
-    },
-    tls: {
-      // Отключение проверки сертификата — только по явному флагу.
-      // Прежде было захардкожено rejectUnauthorized: false (риск MITM).
-      rejectUnauthorized: !config.mailTlsInsecure,
-    },
-    connectionTimeout: 30000,
-    socketTimeout: 60000,
-    logger: false,
-  });
+  const client = new ImapFlow(buildImapOptions());
 
   client.on('error', (error) => {
     console.error(`❌ IMAP error: ${error.message}`);
+    hintCertificateProblem(error.message);
   });
 
   return client;
@@ -379,6 +440,7 @@ async function processMail() {
     }
   } catch (error) {
     console.error(`❌ processMail: ${error.message}`);
+    hintCertificateProblem(error.message);
     return 0;
   } finally {
     if (mailClient) {
@@ -397,6 +459,8 @@ async function processMail() {
 /* ------------------------------------------------------------------ */
 
 async function runIdleLoop() {
+  let consecutiveFailures = 0;
+
   while (!stopping) {
     let mailClient;
     try {
@@ -438,8 +502,17 @@ async function runIdleLoop() {
       }
 
       await processMail();
+      consecutiveFailures = 0;
     } catch (error) {
-      console.error(`❌ IDLE error: ${error.message}`);
+      consecutiveFailures++;
+      hintCertificateProblem(error.message);
+
+      // Прежние 5 секунд между повторами заполняли лог Render тысячами
+      // одинаковых строк. Логируем первые три сбоя, дальше — каждую 20-ю попытку.
+      if (consecutiveFailures <= 3 || consecutiveFailures % 20 === 0) {
+        console.error(`❌ IDLE error (попытка ${consecutiveFailures}): ${error.message}`);
+      }
+
       if (mailClient) {
         try {
           await mailClient.logout();
@@ -449,7 +522,14 @@ async function runIdleLoop() {
       }
     }
 
-    if (!stopping) await new Promise((resolve) => setTimeout(resolve, 5000));
+    if (!stopping) {
+      // Экспоненциальная пауза: 5с → 10с → 20с → ... до MAIL_IDLE_RETRY_MAX_MS
+      const delay =
+        consecutiveFailures === 0
+          ? 5000
+          : Math.min(5000 * 2 ** (consecutiveFailures - 1), config.mailIdleRetryMaxMs);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
   }
   console.log('📧 IDLE-цикл остановлен');
 }
@@ -483,4 +563,7 @@ module.exports = {
   stopEmailWorker,
   processMail,
   createYougileTask,
+  // для тестов
+  buildImapOptions,
+  describeCertificateProblem,
 };
