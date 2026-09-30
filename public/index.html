@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YouGile AI Agent — Дашборд</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-2: #1c2129;
+    --border: #2d333b;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --err: #f85149;
+    --info: #a371f7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(13,17,23,.95); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border); padding: 14px 20px;
+    display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  .spacer { flex: 1; }
+  input, button, select {
+    font: inherit; color: var(--text); background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;
+  }
+  input:focus, button:focus { outline: none; border-color: var(--accent); }
+  button { cursor: pointer; transition: background .15s; }
+  button:hover { background: #262c36; }
+  button.primary { background: #1f6feb; border-color: #1f6feb; }
+  button.primary:hover { background: #388bfd; }
+  button.danger:hover { background: #3d1d1f; border-color: var(--err); color: var(--err); }
+  main { padding: 20px; max-width: 1500px; margin: 0 auto; }
+  .grid { display: grid; gap: 16px; }
+  .grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+  .grid.cols-4 { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; overflow: hidden;
+  }
+  .card h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--muted); margin: 0 0 12px; font-weight: 600;
+  }
+  .metric { text-align: left; }
+  .metric .value { font-size: 30px; font-weight: 600; line-height: 1.1; }
+  .metric .label { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 600; white-space: nowrap;
+  }
+  .pill.ok   { background: rgba(63,185,80,.15);  color: var(--ok); }
+  .pill.warn { background: rgba(210,153,34,.15); color: var(--warn); }
+  .pill.err  { background: rgba(248,81,73,.15);  color: var(--err); }
+  .pill.info { background: rgba(163,113,247,.15);color: var(--info); }
+  .pill.mute { background: rgba(139,148,158,.15);color: var(--muted); }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  .muted { color: var(--muted); }
+  .warn-box {
+    border-left: 3px solid var(--warn); background: rgba(210,153,34,.08);
+    padding: 10px 12px; border-radius: 0 6px 6px 0; margin-bottom: 8px; font-size: 13px;
+  }
+  .warn-box.critical { border-left-color: var(--err); background: rgba(248,81,73,.08); }
+  .warn-box.info { border-left-color: var(--info); background: rgba(163,113,247,.08); }
+  .svc { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); gap: 10px; }
+  .svc:last-child { border-bottom: none; }
+  .svc .name { font-weight: 500; }
+  .svc .detail { color: var(--muted); font-size: 12px; margin-top: 2px; word-break: break-all; }
+  .bar { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; margin-top: 6px; }
+  .bar > div { height: 100%; background: var(--accent); transition: width .3s; }
+  .login { max-width: 420px; margin: 12vh auto; }
+  .login input { width: 100%; margin-bottom: 10px; }
+  .hidden { display: none !important; }
+  .empty { color: var(--muted); font-style: italic; padding: 12px 0; text-align: center; }
+  .err-line { color: var(--err); font-size: 12px; margin-top: 4px; word-break: break-word; }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+  .scroll { max-height: 420px; overflow-y: auto; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 24px; }
+  a { color: var(--accent); }
+  @media (max-width: 640px) { main { padding: 12px; } .grid.cols-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🤖 YouGile AI Agent</h1>
+    <div class="sub" id="meta">загрузка…</div>
+  </div>
+  <div class="spacer"></div>
+  <label class="sub" style="display:flex;align-items:center;gap:6px">
+    <input type="checkbox" id="auto" checked> автообновление 30с
+  </label>
+  <button id="refresh">↻ Обновить</button>
+  <button id="logout" class="danger">Выйти</button>
+</header>
+
+<main>
+  <!-- Экран входа -->
+  <section id="login" class="login card hidden">
+    <h2>Доступ к дашборду</h2>
+    <p class="muted" style="margin-top:0">
+      Введите <span class="mono">ADMIN_TOKEN</span> — тот же, что задан в переменных окружения Render.
+      Токен хранится только в localStorage этого браузера.
+    </p>
+    <input type="password" id="token" placeholder="ADMIN_TOKEN" autocomplete="off">
+    <button class="primary" id="signin" style="width:100%">Войти</button>
+    <p class="err-line hidden" id="loginError"></p>
+  </section>
+
+  <!-- Контент -->
+  <section id="content" class="hidden">
+    <div id="warnings"></div>
+
+    <div class="grid cols-4" style="margin-bottom:16px" id="metrics"></div>
+
+    <div class="grid cols-2" style="margin-bottom:16px">
+      <div class="card">
+        <h2>Состояние сервисов</h2>
+        <div id="services"></div>
+      </div>
+      <div class="card">
+        <h2>Задачи в YouGile</h2>
+        <div id="columns"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <h2>Последние запуски агента</h2>
+      <div class="scroll"><table id="agentRuns"></table></div>
+    </div>
+
+    <div class="grid cols-2" style="margin-bottom:16px">
+      <div class="card">
+        <h2>Реестр задач (блокировки и попытки)</h2>
+        <div class="scroll"><table id="taskRuns"></table></div>
+      </div>
+      <div class="card">
+        <h2>Последние сохранённые шаги</h2>
+        <div class="scroll"><table id="recentSteps"></table></div>
+      </div>
+    </div>
+
+    <div class="grid cols-2">
+      <div class="card">
+        <h2>Доступ к Telegram-боту</h2>
+        <div id="access"></div>
+      </div>
+      <div class="card">
+        <h2>Процесс и память</h2>
+        <div id="runtime"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>YouGile AI Agent · дашборд работает без внешних зависимостей · <span id="updated"></span></footer>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const TOKEN_KEY = 'yougile_glm_admin_token';
+
+  let timer = null;
+  let busy = false;
+
+  /* ---------- утилиты ---------- */
+
+  function esc(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function ago(date) {
+    if (!date) return '—';
+    const diff = Date.now() - new Date(date).getTime();
+    if (!Number.isFinite(diff)) return '—';
+    const abs = Math.abs(diff);
+    const units = [[86400000, 'д'], [3600000, 'ч'], [60000, 'м'], [1000, 'с']];
+    for (const [ms, name] of units) {
+      if (abs >= ms) return Math.round(abs / ms) + name + ' назад';
+    }
+    return 'только что';
+  }
+
+  function duration(seconds) {
+    if (seconds === null || seconds === undefined) return '—';
+    if (seconds < 60) return seconds + 'с';
+    const m = Math.floor(seconds / 60);
+    return m + 'м ' + (seconds % 60) + 'с';
+  }
+
+  function pill(text, kind) {
+    return '<span class="pill ' + kind + '">' + esc(text) + '</span>';
+  }
+
+  /* ---------- запросы ---------- */
+
+  async function api(path, options) {
+    const response = await fetch(path, Object.assign({
+      headers: { 'X-Admin-Token': localStorage.getItem(TOKEN_KEY) || '' },
+    }, options || {}));
+
+    if (response.status === 401 || response.status === 503) {
+      const body = await response.json().catch(() => ({}));
+      throw Object.assign(new Error(body.error || 'Требуется авторизация'), { auth: true });
+    }
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
+  }
+
+  /* ---------- отрисовка ---------- */
+
+  function renderWarnings(list) {
+    const box = $('warnings');
+    if (!list || list.length === 0) { box.innerHTML = ''; return; }
+    box.innerHTML = list.map((w) =>
+      '<div class="warn-box ' + esc(w.level) + '">' +
+      (w.level === 'critical' ? '🔴 ' : w.level === 'warning' ? '🟡 ' : '🟣 ') +
+      esc(w.text) + '</div>'
+    ).join('');
+  }
+
+  function renderMetrics(data) {
+    const stats = data.stats || {};
+    const runs = stats.runs || {};
+    const items = [
+      { value: runs.done ?? '—', label: 'задач выполнено', color: 'var(--ok)' },
+      { value: runs.error ?? '—', label: 'с ошибками', color: 'var(--err)' },
+      { value: runs.running ?? '—', label: 'в работе сейчас', color: 'var(--accent)' },
+      { value: stats.stepsCount ?? '—', label: 'сохранено шагов' },
+      { value: stats.searchesCount ?? '—', label: 'запросов в кэше поиска' },
+      { value: duration(data.runtime ? data.runtime.uptimeSec : null), label: 'аптайм процесса' },
+    ];
+    $('metrics').innerHTML = items.map((item) =>
+      '<div class="card metric"><div class="value" style="color:' + (item.color || 'var(--text)') + '">' +
+      esc(item.value) + '</div><div class="label">' + esc(item.label) + '</div></div>'
+    ).join('');
+  }
+
+  function serviceRow(name, status, detail) {
+    return '<div class="svc"><div><div class="name">' + esc(name) + '</div>' +
+      (detail ? '<div class="detail">' + esc(detail) + '</div>' : '') + '</div>' +
+      status + '</div>';
+  }
+
+  function renderServices(services) {
+    const rows = [];
+
+    const mongo = services.mongo || {};
+    rows.push(serviceRow('MongoDB',
+      mongo.ok ? pill('подключена', 'ok') : pill('недоступна', 'err'),
+      mongo.ok ? (mongo.data && mongo.data.database) : mongo.error));
+
+    const glm = services.glm || {};
+    rows.push(serviceRow('GLM (Z.AI)',
+      glm.data && glm.data.configured ? pill(glm.data.model, 'ok') : pill('не настроен', 'err'),
+      glm.data ? 'шагов: ' + glm.data.maxSteps + ' · контекст: ' + (glm.data.contextBudget / 1000) + 'K симв.' : ''));
+
+    const cloud = services.cloud || {};
+    if (cloud.ok && cloud.data && cloud.data.configured) {
+      const d = cloud.data;
+      const used = d.usedGb || 0, quota = d.quotaGb || 0;
+      const percent = quota > 0 ? Math.min(100, Math.round((used / quota) * 100)) : 0;
+      rows.push(serviceRow('pCloud', pill('подключен', 'ok'),
+        (d.email || '') + ' · регион ' + d.region + ' · ' + used + ' / ' + quota + ' ГБ' +
+        (quota > 0 ? '<div class="bar"><div style="width:' + percent + '%"></div></div>' : '')));
+    } else {
+      rows.push(serviceRow('pCloud', pill('не настроен', 'warn'),
+        cloud.ok ? (cloud.data && cloud.data.note) : cloud.error));
+    }
+
+    const search = services.search || {};
+    if (search.ok) {
+      const d = search.data;
+      const active = ['tavily', 'brave', 'googleCse']
+        .filter((k) => d[k]).map((k) => k === 'googleCse' ? 'google' : k);
+      active.push('wikipedia');
+      rows.push(serviceRow('Веб-поиск',
+        pill(d.activeCount + ' пров.', d.activeCount > 1 ? 'ok' : 'warn'),
+        'цепочка: ' + d.order.join(' → ') + ' · активны: ' + active.join(', ')));
+    } else {
+      rows.push(serviceRow('Веб-поиск', pill('ошибка', 'err'), search.error));
+    }
+
+    const tg = services.telegram || {};
+    if (tg.ok && tg.data && tg.data.configured) {
+      const d = tg.data;
+      rows.push(serviceRow('Telegram',
+        pill(d.polling ? 'polling' : 'остановлен', d.polling ? 'ok' : 'warn'),
+        'whitelist: ' + (d.whitelistStrict ? 'строгий (' + d.adminCount + ' адм.)' : 'ОТКРЫТ — задайте TELEGRAM_ADMIN_IDS') +
+        ' · chat ID: ' + (d.chatIdSet ? 'задан' : 'нет')));
+    } else {
+      rows.push(serviceRow('Telegram', pill('не настроен', 'warn'), 'нет TELEGRAM_BOT_TOKEN'));
+    }
+
+    const yg = services.yougile || {};
+    if (yg.ok && yg.data && yg.data.configured) {
+      rows.push(serviceRow('YouGile', pill('доступен', 'ok'), 'колонок: ' + yg.data.columnsCount));
+    } else {
+      rows.push(serviceRow('YouGile', pill('ошибка', 'err'), yg.ok ? (yg.data && yg.data.note) : yg.error));
+    }
+
+    const mail = services.mail || {};
+    rows.push(serviceRow('Почта (IMAP)',
+      mail.data && mail.data.configured ? pill('настроена', 'ok') : pill('отключена', 'warn'),
+      mail.data && mail.data.configured
+        ? mail.data.user + ' · ' + mail.data.host + ' → ' + mail.data.doneFolder
+        : 'MAIL_USER / MAIL_PASSWORD не заданы'));
+
+    $('services').innerHTML = rows.join('');
+  }
+
+  function renderColumns(columns, error) {
+    if (error) { $('columns').innerHTML = '<div class="err-line">' + esc(error) + '</div>'; return; }
+    if (!columns || columns.length === 0) { $('columns').innerHTML = '<div class="empty">нет данных</div>'; return; }
+
+    $('columns').innerHTML = '<table><thead><tr><th>Колонка</th><th>Задач</th><th>ID</th></tr></thead><tbody>' +
+      columns.map((c) =>
+        '<tr><td>' + esc(c.name) + '</td>' +
+        '<td>' + (c.error ? pill('ошибка', 'err') : (c.count === null ? pill('—', 'mute') : '<b>' + esc(c.count) + '</b>')) + '</td>' +
+        '<td class="mono muted">' + (c.configured ? esc(c.columnId) : pill('не задан', 'warn')) + '</td></tr>'
+      ).join('') + '</tbody></table>';
+  }
+
+  function renderAgentRuns(runs, error) {
+    const table = $('agentRuns');
+    if (error) { table.innerHTML = '<tr><td class="err-line">' + esc(error) + '</td></tr>'; return; }
+    if (!runs || runs.length === 0) {
+      table.innerHTML = '<tr><td class="empty">Запусков ещё не было. Переместите задачу в колонку «К выполнению».</td></tr>';
+      return;
+    }
+
+    table.innerHTML = '<thead><tr><th>Когда</th><th>Задача</th><th>Режим</th><th>Шаги</th>' +
+      '<th>Инстр.</th><th>Время</th><th>Итог</th></tr></thead><tbody>' +
+      runs.map((r) =>
+        '<tr><td class="muted" title="' + esc(r.startedAt) + '">' + esc(ago(r.startedAt)) + '</td>' +
+        '<td>' + esc(r.title || '—') + '<div class="mono muted">' + esc(r.taskId) + '</div>' +
+          (r.error ? '<div class="err-line">' + esc(r.error) + '</div>' : '') + '</td>' +
+        '<td>' + pill(r.mode === 'question' ? 'вопрос' : 'задача', r.mode === 'question' ? 'info' : 'mute') + '</td>' +
+        '<td>' + esc(r.steps ?? '—') + '</td>' +
+        '<td>' + esc(r.toolCalls ?? '—') + '</td>' +
+        '<td>' + esc(duration(r.durationSec)) + '</td>' +
+        '<td>' + (r.running ? pill('выполняется', 'info')
+                  : r.completed ? pill('готово', 'ok')
+                  : pill('не завершено', 'err')) + '</td></tr>'
+      ).join('') + '</tbody>';
+  }
+
+  function renderTaskRuns(runs, error) {
+    const table = $('taskRuns');
+    if (error) { table.innerHTML = '<tr><td class="err-line">' + esc(error) + '</td></tr>'; return; }
+    if (!runs || runs.length === 0) {
+      table.innerHTML = '<tr><td class="empty">пусто</td></tr>';
+      return;
+    }
+
+    table.innerHTML = '<thead><tr><th>Задача</th><th>Статус</th><th>Попыток</th><th>Обновлено</th><th></th></tr></thead><tbody>' +
+      runs.map((r) => {
+        const kind = r.status === 'done' ? 'ok' : r.status === 'running' ? 'info' : 'err';
+        return '<tr><td class="mono">' + esc(r.taskId) + '</td>' +
+          '<td>' + pill(r.status, kind) + (r.error ? '<div class="err-line">' + esc(r.error) + '</div>' : '') + '</td>' +
+          '<td>' + esc(r.attempts) + '</td>' +
+          '<td class="muted">' + esc(ago(r.updatedAt)) + '</td>' +
+          '<td><button class="danger" data-reset="' + esc(r.taskId) + '">сброс</button></td></tr>';
+      }).join('') + '</tbody>';
+
+    table.querySelectorAll('[data-reset]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const taskId = btn.getAttribute('data-reset');
+        if (!confirm('Снять блокировку с задачи ' + taskId + '? Она будет выполнена заново.')) return;
+        btn.disabled = true;
+        try {
+          await api('/api/runs/' + encodeURIComponent(taskId) + '/reset', { method: 'POST' });
+          await load();
+        } catch (e) {
+          alert('Ошибка: ' + e.message);
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  function renderRecentSteps(rows, error) {
+    const table = $('recentSteps');
+    if (error) { table.innerHTML = '<tr><td class="err-line">' + esc(error) + '</td></tr>'; return; }
+    if (!rows || rows.length === 0) { table.innerHTML = '<tr><td class="empty">пусто</td></tr>'; return; }
+
+    table.innerHTML = '<thead><tr><th>Когда</th><th>Задача</th><th>Шаг</th></tr></thead><tbody>' +
+      rows.map((r) =>
+        '<tr><td class="muted">' + esc(ago(r.timestamp)) + '</td>' +
+        '<td class="mono muted">' + esc(r.taskId) + '</td>' +
+        '<td><b>' + esc(r.step) + '</b><div class="muted mono" style="font-size:11px">' + esc(r.preview) + '</div></td></tr>'
+      ).join('') + '</tbody>';
+  }
+
+  function renderAccess(access, requests) {
+    let html = '';
+
+    const list = access || [];
+    html += list.length === 0
+      ? '<div class="empty">Список доступа пуст. Напишите боту /start — ваш chat ID придёт в ответ.</div>'
+      : '<table><thead><tr><th>Chat ID</th><th>Кто</th><th>Роль</th><th>Выдан</th></tr></thead><tbody>' +
+        list.map((a) =>
+          '<tr><td class="mono">' + esc(a.chatId) + '</td>' +
+          '<td>' + esc(a.firstName || '—') + (a.username ? ' <span class="muted">@' + esc(a.username) + '</span>' : '') + '</td>' +
+          '<td>' + pill(a.role, a.role === 'admin' ? 'info' : 'mute') + '</td>' +
+          '<td class="muted">' + esc(ago(a.grantedAt)) + '</td></tr>'
+        ).join('') + '</tbody></table>';
+
+    const pending = requests || [];
+    if (pending.length > 0) {
+      html += '<h2 style="margin-top:16px">Запросы доступа</h2><table><thead><tr><th>Chat ID</th><th>Кто</th><th>Обращений</th></tr></thead><tbody>' +
+        pending.map((r) =>
+          '<tr><td class="mono">' + esc(r.chatId) + '</td>' +
+          '<td>' + esc(r.firstName || '—') + (r.username ? ' <span class="muted">@' + esc(r.username) + '</span>' : '') + '</td>' +
+          '<td>' + esc(r.hits) + '</td></tr>'
+        ).join('') + '</tbody></table>' +
+        '<p class="muted" style="font-size:12px">Разрешить доступ можно командой <span class="mono">/allow &lt;chatId&gt;</span> прямо в боте.</p>';
+    }
+
+    $('access').innerHTML = html;
+  }
+
+  function renderRuntime(runtime) {
+    if (!runtime) { $('runtime').innerHTML = '<div class="empty">нет данных</div>'; return; }
+    const m = runtime.memory || {};
+    const rows = [
+      ['Node.js', runtime.node],
+      ['PID', runtime.pid],
+      ['Платформа', runtime.platform],
+      ['CPU', (runtime.cpus || '—') + ' ядер'],
+      ['Load average', (runtime.loadAverage || []).join(' / ')],
+      ['Часовой пояс отчётов', runtime.reportTimezone],
+      ['Память RSS', (m.rssMb ?? '—') + ' МБ'],
+      ['Heap используется', (m.heapUsedMb ?? '—') + ' МБ из ' + (m.heapTotalMb ?? '—') + ' МБ'],
+      ['Запущен', runtime.sinceProcessStart],
+    ];
+
+    const percent = m.heapTotalMb ? Math.min(100, Math.round((m.heapUsedMb / m.heapTotalMb) * 100)) : 0;
+
+    $('runtime').innerHTML = '<table><tbody>' +
+      rows.map(([k, v]) => '<tr><td class="muted">' + esc(k) + '</td><td class="mono">' + esc(v) + '</td></tr>').join('') +
+      '</tbody></table>' +
+      '<div class="bar" style="margin-top:12px"><div style="width:' + percent + '%"></div></div>' +
+      '<div class="muted" style="font-size:12px;margin-top:4px">heap: ' + percent + '%</div>';
+  }
+
+  /* ---------- загрузка ---------- */
+
+  async function load() {
+    if (busy) return;
+    busy = true;
+    try {
+      const data = await api('/api/dashboard');
+      renderWarnings(data.warnings);
+      renderMetrics(data);
+      renderServices(data.services || {});
+      renderColumns(data.columns, data.columnsError);
+      renderAgentRuns(data.agentRuns, data.agentRunsError);
+      renderTaskRuns(data.taskRuns, data.taskRunsError);
+      renderRecentSteps(data.recentSteps, data.recentStepsError);
+      renderAccess(data.access, data.accessRequests);
+      renderRuntime(data.runtime);
+
+      $('meta').textContent = 'обновлено ' + new Date(data.generatedAt).toLocaleTimeString('ru-RU') +
+        ' · аптайм ' + duration(data.runtime ? data.runtime.uptimeSec : null);
+      $('updated').textContent = new Date(data.generatedAt).toLocaleString('ru-RU');
+      showContent(true);
+    } catch (error) {
+      if (error.auth) { showContent(false); return; }
+      $('meta').textContent = 'ошибка загрузки: ' + error.message;
+    } finally {
+      busy = false;
+    }
+  }
+
+  function showContent(authorized) {
+    $('login').classList.toggle('hidden', authorized);
+    $('content').classList.toggle('hidden', !authorized);
+    $('logout').classList.toggle('hidden', !authorized);
+    if (!authorized) {
+      stopTimer();
+      $('token').focus();
+    } else {
+      startTimer();
+    }
+  }
+
+  function startTimer() {
+    stopTimer();
+    if ($('auto').checked) timer = setInterval(load, 30000);
+  }
+  function stopTimer() { if (timer) { clearInterval(timer); timer = null; } }
+
+  /* ---------- события ---------- */
+
+  $('signin').addEventListener('click', async () => {
+    const value = $('token').value.trim();
+    if (!value) { $('loginError').textContent = 'Введите токен'; $('loginError').classList.remove('hidden'); return; }
+    localStorage.setItem(TOKEN_KEY, value);
+    $('loginError').classList.add('hidden');
+    await load();
+  });
+
+  $('token').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('signin').click(); });
+
+  $('logout').addEventListener('click', () => {
+    localStorage.removeItem(TOKEN_KEY);
+    showContent(false);
+  });
+
+  $('refresh').addEventListener('click', load);
+  $('auto').addEventListener('change', () => { $('auto').checked ? startTimer() : stopTimer(); });
+
+  /* ---------- старт ---------- */
+
+  if (localStorage.getItem(TOKEN_KEY)) { load(); } else { showContent(false); }
+})();
+</script>
+</body>
+</html>

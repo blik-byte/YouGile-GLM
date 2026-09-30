@@ -21,10 +21,13 @@
 
 require('dotenv').config();
 
+const path = require('path');
+
 const express = require('express');
 const cors = require('cors');
 
 const { config, validate } = require('./lib/config');
+const dashboard = require('./lib/dashboard');
 const db = require('./db');
 const yougile = require('./lib/yougile-client');
 const { chatJson } = require('./lib/glm-client');
@@ -73,18 +76,32 @@ function requireAdmin(req, res, next) {
 /* Публичные эндпоинты                                                 */
 /* ------------------------------------------------------------------ */
 
-// Health check — открыт специально: его пингует cron-job.org,
-// чтобы бесплатный dyno Render не засыпал.
+// Дашборд. Отдаётся без авторизации — сам по себе HTML не содержит данных,
+// всё запрашивается через /api/* с токеном. Важно, что маршрут всегда отвечает
+// 200: его пингует cron-job.org, чтобы бесплатный dyno Render не засыпал.
 app.get('/', (req, res) => {
-  res.json({ status: 'ok', service: 'yougile-glm', timestamp: new Date().toISOString() });
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Health check для мониторинга — лёгкий, без обращения к внешним сервисам
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
+    service: 'yougile-glm',
     uptimeSec: Math.round(process.uptime()),
+    node: process.version,
     timestamp: new Date().toISOString(),
   });
+});
+
+// Полный снимок состояния системы для дашборда
+app.get('/api/dashboard', requireAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 15, 100);
+    res.json(await dashboard.collect({ limit }));
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 /* ------------------------------------------------------------------ */
@@ -201,14 +218,19 @@ app.get('/runs', requireAdmin, async (req, res) => {
   }
 });
 
-app.post('/runs/:taskId/reset', requireAdmin, async (req, res) => {
+// Снять блокировку с задачи, чтобы агент взял её заново
+// (например, если процесс перезапустился посреди выполнения)
+async function resetRunHandler(req, res) {
   try {
     const removed = await db.resetTaskRun(req.params.taskId);
     res.json({ success: true, removed });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
-});
+}
+
+app.post('/runs/:taskId/reset', requireAdmin, resetRunHandler);
+app.post('/api/runs/:taskId/reset', requireAdmin, resetRunHandler);
 
 /* ------------------------------------------------------------------ */
 /* Вебхук YouGile                                                      */

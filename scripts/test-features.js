@@ -608,6 +608,69 @@ async function main() {
   });
 
   /* ================================================================== */
+  console.log('\n— Веб-дашборд —');
+  /* ================================================================== */
+
+  const dashboard = require('../lib/dashboard');
+
+  await test('dashboard.collect() возвращает все разделы и не падает без внешних сервисов', async () => {
+    const data = await dashboard.collect({ limit: 5 });
+
+    const required = [
+      'generatedAt', 'runtime', 'warnings', 'services', 'columns',
+      'agentRuns', 'taskRuns', 'recentSteps', 'access', 'accessRequests', 'stats',
+    ];
+    for (const key of required) {
+      assert.ok(key in data, `в ответе нет раздела "${key}"`);
+    }
+
+    // Даже когда MongoDB и YouGile недоступны, дашборд обязан отдать картину,
+    // а не упасть — иначе диагностика невозможна в момент аварии
+    for (const name of ['mongo', 'glm', 'cloud', 'search', 'telegram', 'yougile', 'mail']) {
+      assert.ok(name in data.services, `нет состояния сервиса "${name}"`);
+      assert.strictEqual(typeof data.services[name].ok, 'boolean');
+    }
+
+    assert.ok(Array.isArray(data.warnings));
+    assert.ok(Number.isFinite(data.runtime.uptimeSec));
+    assert.ok(data.runtime.memory.rssMb > 0);
+  });
+
+  await test('dashboard: предупреждает о критичных пробелах в конфигурации', () => {
+    const warnings = dashboard.collectConfigWarnings();
+    const texts = warnings.map((w) => w.text).join(' | ');
+
+    assert.ok(warnings.every((w) => ['critical', 'warning', 'info'].includes(w.level)), 'неизвестный уровень предупреждения');
+    assert.ok(/ADMIN_TOKEN/.test(texts) || process.env.ADMIN_TOKEN, 'нет предупреждения про ADMIN_TOKEN');
+    assert.ok(/TELEGRAM_ADMIN_IDS/.test(texts) || process.env.TELEGRAM_ADMIN_IDS, 'нет предупреждения про whitelist');
+    assert.ok(/COLUMN_TO_EXECUTE/.test(texts) || process.env.COLUMN_TO_EXECUTE, 'нет предупреждения про колонку');
+  });
+
+  await test('дашборд: / открыт, /api/dashboard закрыт токеном', () => {
+    const source = fs.readFileSync(require.resolve('../index.js'), 'utf8');
+
+    const rootLine = source.split('\n').find((l) => /app\.get\('\/'/.test(l));
+    assert.ok(rootLine && !/requireAdmin/.test(rootLine), '/ должен оставаться открытым — его пингует cron-job.org');
+    assert.ok(/sendFile/.test(source), 'корень должен отдавать HTML дашборда');
+
+    const healthLine = source.split('\n').find((l) => /app\.get\('\/health'/.test(l));
+    assert.ok(healthLine && !/requireAdmin/.test(healthLine), '/health должен оставаться открытым');
+
+    const apiLine = source.split('\n').find((l) => /app\.get\('\/api\/dashboard'/.test(l));
+    assert.ok(apiLine && /requireAdmin/.test(apiLine), '/api/dashboard обязан требовать токен');
+  });
+
+  await test('дашборд: HTML не зависит от внешних ресурсов', () => {
+    const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+    // CDN не подключается намеренно: страница должна работать офлайн и в изолированном preview
+    assert.ok(!/<script[^>]+src=["']https?:/i.test(html), 'подключён внешний скрипт');
+    assert.ok(!/<link[^>]+href=["']https?:/i.test(html), 'подключена внешняя таблица стилей');
+    assert.ok(/<style>/.test(html), 'стили должны быть встроены');
+    assert.ok(html.includes('X-Admin-Token'), 'нет передачи токена в запросах');
+    assert.ok(/esc\(/.test(html), 'нет экранирования при выводе данных');
+  });
+
+  /* ================================================================== */
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${'='.repeat(60)}`);
