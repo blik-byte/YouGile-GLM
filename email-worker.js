@@ -34,12 +34,6 @@ function createMailClient() {
   return client;
 }
 
-// ✅ ВРЕМЕННАЯ ОТЛАДКА (удалить после проверки!)
-`🔧 MAIL_USER: ${process.env.MAIL_USER}`);
-`🔧 MAIL_PASSWORD длина: ${process.env.MAIL_PASSWORD?.length || 0} символов`);
-`🔧 MAIL_PASSWORD первые 5 символов: ${process.env.MAIL_PASSWORD?.substring(0, 5)}`);
-`🔧 MAIL_PASSWORD содержит "hidden": ${process.env.MAIL_PASSWORD?.includes('hidden')}`);
-
 let isProcessing = false;
 const AI_STICKER_ID = "c553a657-fa54-4532-9d02-4750e013005f";
 
