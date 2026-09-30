@@ -1,3 +1,5 @@
+const { sendNotification } = require('./telegram-bot');
+
 // email-worker.js
 const { ImapFlow } = require("imapflow");
 const { simpleParser } = require("mailparser");
@@ -33,10 +35,10 @@ function createMailClient() {
 }
 
 // ✅ ВРЕМЕННАЯ ОТЛАДКА (удалить после проверки!)
-console.log(`🔧 MAIL_USER: ${process.env.MAIL_USER}`);
-console.log(`🔧 MAIL_PASSWORD длина: ${process.env.MAIL_PASSWORD?.length || 0} символов`);
-console.log(`🔧 MAIL_PASSWORD первые 5 символов: ${process.env.MAIL_PASSWORD?.substring(0, 5)}`);
-console.log(`🔧 MAIL_PASSWORD содержит "hidden": ${process.env.MAIL_PASSWORD?.includes('hidden')}`);
+`🔧 MAIL_USER: ${process.env.MAIL_USER}`);
+`🔧 MAIL_PASSWORD длина: ${process.env.MAIL_PASSWORD?.length || 0} символов`);
+`🔧 MAIL_PASSWORD первые 5 символов: ${process.env.MAIL_PASSWORD?.substring(0, 5)}`);
+`🔧 MAIL_PASSWORD содержит "hidden": ${process.env.MAIL_PASSWORD?.includes('hidden')}`);
 
 let isProcessing = false;
 const AI_STICKER_ID = "c553a657-fa54-4532-9d02-4750e013005f";
@@ -135,10 +137,10 @@ const description = [
 
 // Основная функция обработки почты
 async function processMail() {
-  console.log(`🔍 processMail() запущен`);
+  `🔍 processMail() запущен`);
 
   if (isProcessing) {
-    console.log("⏳ Уже идёт обработка, пропускаем");
+    "⏳ Уже идёт обработка, пропускаем");
     return 0;
   }
 
@@ -149,15 +151,15 @@ isProcessing = true;
 
   try {
     await mailClient.connect();
-    console.log("✅ IMAP подключен");
+    "✅ IMAP подключен");
 
     const lock = await mailClient.getMailboxLock("INBOX");
     
     try {
   // Ищем все непрочитанные письма
-  console.log(`🔍 Ищем непрочитанные письма...`);
+  `🔍 Ищем непрочитанные письма...`);
   const allUnseen = await mailClient.search({ seen: false });
-  console.log(`📬 Всего непрочитанных: ${allUnseen.length}`);
+  `📬 Всего непрочитанных: ${allUnseen.length}`);
 
   // Фильтруем по теме
   const range = [];
@@ -169,10 +171,10 @@ isProcessing = true;
     }
   }
 
-  console.log(`📬 Писем с темой [TASK] или "Задачи": ${range.length}`);
+  `📬 Писем с темой [TASK] или "Задачи": ${range.length}`);
   
   if (range.length === 0) {
-    console.log("📭 Нет писем с темой [TASK] или 'Задачи'");
+    "📭 Нет писем с темой [TASK] или 'Задачи'");
     return 0;
   }
 
@@ -190,13 +192,13 @@ isProcessing = true;
         // 🔍 Фильтруем ненужные письма
         if (shouldIgnoreEmail(parsed)) {
           await mailClient.messageFlagsAdd(message.uid, ["\\Seen"], { uid: true });
-          console.log(`🚫 Пропущено: ${parsed.from?.value?.[0]?.address} | ${parsed.subject}`);
+          `🚫 Пропущено: ${parsed.from?.value?.[0]?.address} | ${parsed.subject}`);
           continue;
         }
         
         // ✅ Ограничиваем размер текста (макс 5000 символов)
         const text = (parsed.text || "").trim().substring(0, 5000);
-        console.log(`📧 Письмо UID ${message.uid} | Тема: "${parsed.subject}" | Размер: ${text.length} симв.`);
+        `📧 Письмо UID ${message.uid} | Тема: "${parsed.subject}" | Размер: ${text.length} симв.`);
         
         mailText += `[Тема: ${parsed.subject}]\n${text}\n\n`;
         processedUids.push(message.uid);
@@ -204,7 +206,7 @@ isProcessing = true;
 
       if (processedUids.length === 0) return 0;
 
-      console.log(`📝 Обрабатываю ${processedUids.length} писем, всего ${mailText.length} символов`);
+      `📝 Обрабатываю ${processedUids.length} писем, всего ${mailText.length} символов`);
 
 // ✅ GLM с retry-логикой и увеличенным таймаутом
 const MAX_RETRIES = 3;
@@ -218,7 +220,7 @@ for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {
-    console.log(`🤖 GLM запрос (попытка ${attempt}/${MAX_RETRIES}, таймаут ${timeout/1000}с)...`);
+    `🤖 GLM запрос (попытка ${attempt}/${MAX_RETRIES}, таймаут ${timeout/1000}с)...`);
     const startTime = Date.now();
 
     const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
@@ -282,7 +284,7 @@ for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
 
     clearTimeout(timeoutId);
     const elapsed = Date.now() - startTime;
-    console.log(`✅ GLM ответил за ${elapsed}мс (статус ${glmResponse.status})`);
+    `✅ GLM ответил за ${elapsed}мс (статус ${glmResponse.status})`);
 
     if (!glmResponse.ok) {
       const errorText = await glmResponse.text();
@@ -304,7 +306,7 @@ for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
 
     if (attempt < MAX_RETRIES) {
       const waitTime = attempt * 5000; // 5с, 10с между попытками
-      console.log(`⏳ Ждём ${waitTime/1000}с перед следующей попыткой...`);
+      `⏳ Ждём ${waitTime/1000}с перед следующей попыткой...`);
       await new Promise(r => setTimeout(r, waitTime));
     }
   }
@@ -325,12 +327,12 @@ if (!glmData) {
       }
 
       const tasks = response.tasks || [response];
-      console.log(`🤖 GLM вернул ${tasks.length} задач`);
+      `🤖 GLM вернул ${tasks.length} задач`);
 
       const createdTasks = [];
 
       for (const taskData of tasks) {
-        console.log(`📋 Задача: "${taskData.title}" (can_execute: ${taskData.can_execute})`);
+        `📋 Задача: "${taskData.title}" (can_execute: ${taskData.can_execute})`);
 
        if (taskData.can_execute) {
   // ✅ Пропускаем задачи без плана
@@ -411,11 +413,11 @@ if (!glmData) {
             taskPayload.assigned = [process.env.YOUGILE_GLM_USER_ID];
           }
 
-          console.log(`🔧 Отправляю задачу в YouGile...`);
-console.log(`🔧 API ключ: ${process.env.YOUGILE_GLM_API_KEY ? 'YOUGILE_GLM_API_KEY ✓' : 'НЕ УСТАНОВЛЕН!'}`);
-console.log(`🔧 Токен (первые 10 символов): ${process.env.YOUGILE_GLM_API_KEY?.substring(0, 10)}...`);
-console.log(`🔧 columnId: "${process.env.COLUMN_AWAITING_CONFIRMATION}"`);
-console.log(`🔧 assigned: [${process.env.YOUGILE_GLM_USER_ID}]`);
+          `🔧 Отправляю задачу в YouGile...`);
+`🔧 API ключ: ${process.env.YOUGILE_GLM_API_KEY ? 'YOUGILE_GLM_API_KEY ✓' : 'НЕ УСТАНОВЛЕН!'}`);
+`🔧 Токен (первые 10 символов): ${process.env.YOUGILE_GLM_API_KEY?.substring(0, 10)}...`);
+`🔧 columnId: "${process.env.COLUMN_AWAITING_CONFIRMATION}"`);
+`🔧 assigned: [${process.env.YOUGILE_GLM_USER_ID}]`);
 
           const taskResponse = await fetch('https://rocketup.yougile.com/api-v2/tasks', {
             method: 'POST',
@@ -427,7 +429,7 @@ console.log(`🔧 assigned: [${process.env.YOUGILE_GLM_USER_ID}]`);
           });
 
           const responseText = await taskResponse.text();
-          console.log(`🔧 YouGile статус: ${taskResponse.status}`);
+          `🔧 YouGile статус: ${taskResponse.status}`);
 
           if (!taskResponse.ok) {
             console.error(`❌ YouGile ошибка: ${taskResponse.status} - ${responseText}`);
@@ -463,6 +465,11 @@ if (createdTasks.length === tasks.length) {
   }
   
   console.log(`✅ Создано ${createdTasks.length} задач из ${tasks.length}`);
+  await sendNotification(
+  `📧 <b>Новая задача из email!</b>\n\n` +
+  `📝 ${tasks[0]?.title || 'Без названия'}\n` +
+  `📊 Создано задач: ${createdTasks.length}`
+);
   return createdTasks.length;
   
 } else {
