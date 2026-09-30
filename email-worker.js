@@ -131,48 +131,47 @@ const description = [
 
 // Основная функция обработки почты
 async function processMail() {
-  `🔍 processMail() запущен`);
+  console.log(`🔍 processMail() запущен`);
 
   if (isProcessing) {
-    "⏳ Уже идёт обработка, пропускаем");
+    console.log("⏳ Уже идёт обработка, пропускаем");
     return 0;
   }
+  isProcessing = true;
 
-isProcessing = true;
-
-// ✅ Создаём НОВЫЙ клиент на каждый вызов
+  // ✅ Создаём НОВЫЙ клиент на каждый вызов
   const mailClient = createMailClient();
 
   try {
     await mailClient.connect();
-    "✅ IMAP подключен");
+    console.log("✅ IMAP подключен");
 
     const lock = await mailClient.getMailboxLock("INBOX");
     
     try {
-  // Ищем все непрочитанные письма
-  `🔍 Ищем непрочитанные письма...`);
-  const allUnseen = await mailClient.search({ seen: false });
-  `📬 Всего непрочитанных: ${allUnseen.length}`);
+      // Ищем все непрочитанные письма
+      console.log(`🔍 Ищем непрочитанные письма...`);
+      const allUnseen = await mailClient.search({ seen: false });
+      console.log(`📬 Всего непрочитанных: ${allUnseen.length}`);
 
-  // Фильтруем по теме
-  const range = [];
-  for (const uid of allUnseen) {
-    const message = await mailClient.fetchOne(uid, { envelope: true });
-    const subject = message.envelope.subject || '';
-    if (subject.includes('[TASK]') || subject.includes('Задачи')) {
-      range.push(uid);
-    }
-  }
+      // Фильтруем по теме
+      const range = [];
+      for (const uid of allUnseen) {
+        const message = await mailClient.fetchOne(uid, { envelope: true });
+        const subject = message.envelope.subject || '';
+        if (subject.includes('[TASK]') || subject.includes('Задачи')) {
+          range.push(uid);
+        }
+      }
 
-  `📬 Писем с темой [TASK] или "Задачи": ${range.length}`);
-  
-  if (range.length === 0) {
-    "📭 Нет писем с темой [TASK] или 'Задачи'");
-    return 0;
-  }
+      console.log(`📬 Писем с темой [TASK] или "Задачи": ${range.length}`);
+      
+      if (range.length === 0) {
+        console.log("📭 Нет писем с темой [TASK] или 'Задачи'");
+        return 0;
+      }
 
-  // ... остальной код обработки ...
+      // ... остальной код обработки ...
 
       let mailText = "";
       const processedUids = [];
@@ -186,13 +185,13 @@ isProcessing = true;
         // 🔍 Фильтруем ненужные письма
         if (shouldIgnoreEmail(parsed)) {
           await mailClient.messageFlagsAdd(message.uid, ["\\Seen"], { uid: true });
-          `🚫 Пропущено: ${parsed.from?.value?.[0]?.address} | ${parsed.subject}`);
+          console.log(`🚫 Пропущено: ${parsed.from?.value?.[0]?.address} | ${parsed.subject}`);
           continue;
         }
         
         // ✅ Ограничиваем размер текста (макс 5000 символов)
         const text = (parsed.text || "").trim().substring(0, 5000);
-        `📧 Письмо UID ${message.uid} | Тема: "${parsed.subject}" | Размер: ${text.length} симв.`);
+        console.log(`📧 Письмо UID ${message.uid} | Тема: "${parsed.subject}" | Размер: ${text.length} симв.`);
         
         mailText += `[Тема: ${parsed.subject}]\n${text}\n\n`;
         processedUids.push(message.uid);
@@ -200,35 +199,35 @@ isProcessing = true;
 
       if (processedUids.length === 0) return 0;
 
-      `📝 Обрабатываю ${processedUids.length} писем, всего ${mailText.length} символов`);
+      console.log(`📝 Обрабатываю ${processedUids.length} писем, всего ${mailText.length} символов`);
 
-// ✅ GLM с retry-логикой и увеличенным таймаутом
-const MAX_RETRIES = 3;
-const BASE_TIMEOUT = 120000; // 120 секунд
-let glmData;
-let lastError;
+      // ✅ GLM с retry-логикой и увеличенным таймаутом
+      const MAX_RETRIES = 3;
+      const BASE_TIMEOUT = 120000; // 120 секунд
+      let glmData;
+      let lastError;
 
-for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-  const controller = new AbortController();
-  const timeout = BASE_TIMEOUT + (attempt - 1) * 30000; // увеличиваем с каждой попыткой
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        const controller = new AbortController();
+        const timeout = BASE_TIMEOUT + (attempt - 1) * 30000; // увеличиваем с каждой попыткой
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-  try {
-    `🤖 GLM запрос (попытка ${attempt}/${MAX_RETRIES}, таймаут ${timeout/1000}с)...`);
-    const startTime = Date.now();
+        try {
+          console.log(`🤖 GLM запрос (попытка ${attempt}/${MAX_RETRIES}, таймаут ${timeout/1000}с)...`);
+          const startTime = Date.now();
 
-    const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.ZAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'glm-4.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: `Проанализируй запрос и разбей его на ОТДЕЛЬНЫЕ задачи.
+          const glmResponse = await fetch('https://api.z.ai/api/paas/v4/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.ZAI_API_KEY}`
+            },
+            body: JSON.stringify({
+              model: 'glm-4.5-flash',
+              messages: [
+                {
+                  role: 'system',
+                  content: `Проанализируй запрос и разбей его на ОТДЕЛЬНЫЕ задачи.
 
 ВАЖНО: Если в запросе несколько действий — создай несколько задач!
 
@@ -268,47 +267,47 @@ for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
 }
 
 ВАЖНО: execution_plan ВСЕГДА должен быть МАССИВОМ строк, даже если один шаг!`
-          },
-          { role: 'user', content: mailText }
-        ],
-        response_format: { type: 'json_object' }
-      }),
-      signal: controller.signal
-    });
+                },
+                { role: 'user', content: mailText }
+              ],
+              response_format: { type: 'json_object' }
+            }),
+            signal: controller.signal
+          });
 
-    clearTimeout(timeoutId);
-    const elapsed = Date.now() - startTime;
-    `✅ GLM ответил за ${elapsed}мс (статус ${glmResponse.status})`);
+          clearTimeout(timeoutId);
+          const elapsed = Date.now() - startTime;
+          console.log(`✅ GLM ответил за ${elapsed}мс (статус ${glmResponse.status})`);
 
-    if (!glmResponse.ok) {
-      const errorText = await glmResponse.text();
-      throw new Error(`GLM error ${glmResponse.status}: ${errorText}`);
-    }
+          if (!glmResponse.ok) {
+            const errorText = await glmResponse.text();
+            throw new Error(`GLM error ${glmResponse.status}: ${errorText}`);
+          }
 
-    glmData = await glmResponse.json();
-    break; // Успех — выходим из цикла retry
+          glmData = await glmResponse.json();
+          break; // Успех — выходим из цикла retry
 
-  } catch (error) {
-    clearTimeout(timeoutId);
-    lastError = error;
-    
-    if (error.name === 'AbortError') {
-      console.error(`❌ GLM таймаут на попытке ${attempt} (${timeout/1000}с)`);
-    } else {
-      console.error(`❌ GLM ошибка на попытке ${attempt}: ${error.message}`);
-    }
+        } catch (error) {
+          clearTimeout(timeoutId);
+          lastError = error;
+          
+          if (error.name === 'AbortError') {
+            console.error(`❌ GLM таймаут на попытке ${attempt} (${timeout/1000}с)`);
+          } else {
+            console.error(`❌ GLM ошибка на попытке ${attempt}: ${error.message}`);
+          }
 
-    if (attempt < MAX_RETRIES) {
-      const waitTime = attempt * 5000; // 5с, 10с между попытками
-      `⏳ Ждём ${waitTime/1000}с перед следующей попыткой...`);
-      await new Promise(r => setTimeout(r, waitTime));
-    }
-  }
-}
+          if (attempt < MAX_RETRIES) {
+            const waitTime = attempt * 5000; // 5с, 10с между попытками
+            console.log(`⏳ Ждём ${waitTime/1000}с перед следующей попыткой...`);
+            await new Promise(r => setTimeout(r, waitTime));
+          }
+        }
+      }
 
-if (!glmData) {
-  throw new Error(`GLM API не ответил после ${MAX_RETRIES} попыток: ${lastError?.message}`);
-}
+      if (!glmData) {
+        throw new Error(`GLM API не ответил после ${MAX_RETRIES} попыток: ${lastError?.message}`);
+      }
 
       const aiResponse = glmData.choices[0].message.content;
 
@@ -321,80 +320,78 @@ if (!glmData) {
       }
 
       const tasks = response.tasks || [response];
-      `🤖 GLM вернул ${tasks.length} задач`);
+      console.log(`🤖 GLM вернул ${tasks.length} задач`);
 
       const createdTasks = [];
 
       for (const taskData of tasks) {
-        `📋 Задача: "${taskData.title}" (can_execute: ${taskData.can_execute})`);
+        console.log(`📋 Задача: "${taskData.title}" (can_execute: ${taskData.can_execute})`);
 
-       if (taskData.can_execute) {
-  // ✅ Пропускаем задачи без плана
-  if (!taskData.execution_plan || 
-      (Array.isArray(taskData.execution_plan) && taskData.execution_plan.length === 0)) {
-    console.warn(`⚠️ Пропускаю задачу "${taskData.title}" — нет плана выполнения`);
-    continue;
-  }
+        if (taskData.can_execute) {
+          // ✅ Пропускаем задачи без плана
+          if (!taskData.execution_plan || 
+              (Array.isArray(taskData.execution_plan) && taskData.execution_plan.length === 0)) {
+            console.warn(`⚠️ Пропускаю задачу "${taskData.title}" — нет плана выполнения`);
+            continue;
+          }
 
-  // ✅ Форматируем execution_plan (массив или строка)
-  let executionPlanFormatted;
-  if (Array.isArray(taskData.execution_plan)) {
-    executionPlanFormatted = taskData.execution_plan
-      .map((step, i) => {
-        const cleanStep = String(step).trim();
-        // Если шаг уже начинается с номера ("1. ", "1) ") или "Шаг N:" — не добавляем нумерацию
-        if (/^(шаг\s*\d+[:\.\)]|\d+[\.\)])\s*/i.test(cleanStep)) {
-          return cleanStep;
-        }
-        return `${i + 1}. ${cleanStep}`;
-      })
-      .join('<br>');
-  } else {
-    executionPlanFormatted = String(taskData.execution_plan || "Не указан")
-      .replace(/\n+/g, '<br>')
-      .replace(/<br><br>/g, '<br>');
-  }
+          // ✅ Форматируем execution_plan (массив или строка)
+          let executionPlanFormatted;
+          if (Array.isArray(taskData.execution_plan)) {
+            executionPlanFormatted = taskData.execution_plan
+              .map((step, i) => {
+                const cleanStep = String(step).trim();
+                // Если шаг уже начинается с номера ("1. ", "1) ") или "Шаг N:" — не добавляем нумерацию
+                if (/^(шаг\s*\d+[:\.\)]|\d+[\.\)])\s*/i.test(cleanStep)) {
+                  return cleanStep;
+                }
+                return `${i + 1}. ${cleanStep}`;
+              })
+              .join('<br>');
+          } else {
+            executionPlanFormatted = String(taskData.execution_plan || "Не указан")
+              .replace(/\n+/g, '<br>')
+              .replace(/<br><br>/g, '<br>');
+          }
 
-  // ✅ Формируем описание со всеми блоками
-  const descriptionParts = [
-    "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
-    ""
-  ];
+          // ✅ Формируем описание со всеми блоками
+          const descriptionParts = [
+            "🤖 <b>AI-агент может выполнить эту задачу автономно</b>",
+            ""
+          ];
 
-  // Добавляем "Результат", если есть
-  if (taskData.result && String(taskData.result).trim() && String(taskData.result).trim() !== 'Не применимо') {
-    descriptionParts.push("<b>📊 Результат:</b>");
-    descriptionParts.push(String(taskData.result).trim());
-    descriptionParts.push("");
-  }
+          // Добавляем "Результат", если есть
+          if (taskData.result && String(taskData.result).trim() && String(taskData.result).trim() !== 'Не применимо') {
+            descriptionParts.push("<b>📊 Результат:</b>");
+            descriptionParts.push(String(taskData.result).trim());
+            descriptionParts.push("");
+          }
 
-  // Добавляем "Оценка времени", если есть
-  if (taskData.estimated_time && String(taskData.estimated_time).trim() && String(taskData.estimated_time).trim() !== 'Не применимо') {
-    descriptionParts.push("<b>⏱️ Оценка времени:</b>");
-    descriptionParts.push(String(taskData.estimated_time).trim());
-    descriptionParts.push("");
-  }
+          // Добавляем "Оценка времени", если есть
+          if (taskData.estimated_time && String(taskData.estimated_time).trim() && String(taskData.estimated_time).trim() !== 'Не применимо') {
+            descriptionParts.push("<b>⏱️ Оценка времени:</b>");
+            descriptionParts.push(String(taskData.estimated_time).trim());
+            descriptionParts.push("");
+          }
 
-  // План выполнения (всегда)
-  descriptionParts.push("<b>📋 План выполнения:</b>");
-  descriptionParts.push(executionPlanFormatted);
-  descriptionParts.push("");
+          // План выполнения (всегда)
+          descriptionParts.push("<b>📋 План выполнения:</b>");
+          descriptionParts.push(executionPlanFormatted);
+          descriptionParts.push("");
 
-  // Инструменты
-  descriptionParts.push("<b>🔧 Инструменты:</b>");
-  descriptionParts.push(
-    Array.isArray(taskData.tools_needed) 
-      ? taskData.tools_needed.join(', ') 
-      : (taskData.tools_needed || 'web_search')
-  );
-  descriptionParts.push("");
+          // Инструменты
+          descriptionParts.push("<b>🔧 Инструменты:</b>");
+          descriptionParts.push(
+            Array.isArray(taskData.tools_needed) 
+              ? taskData.tools_needed.join(', ') 
+              : (taskData.tools_needed || 'web_search')
+          );
+          descriptionParts.push("");
 
-  // Инструкция
-  descriptionParts.push("<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'");
+          // Инструкция
+          descriptionParts.push("<b>✅ Для запуска:</b> переместите задачу в колонку 'К выполнению'");
 
-  const description = descriptionParts.join('<br>');
-
-  // ... остальной код (taskPayload, fetch и т.д.)
+          const description = descriptionParts.join('<br>');
 
           const taskPayload = {
             title: taskData.title,
@@ -407,11 +404,7 @@ if (!glmData) {
             taskPayload.assigned = [process.env.YOUGILE_GLM_USER_ID];
           }
 
-          `🔧 Отправляю задачу в YouGile...`);
-`🔧 API ключ: ${process.env.YOUGILE_GLM_API_KEY ? 'YOUGILE_GLM_API_KEY ✓' : 'НЕ УСТАНОВЛЕН!'}`);
-`🔧 Токен (первые 10 символов): ${process.env.YOUGILE_GLM_API_KEY?.substring(0, 10)}...`);
-`🔧 columnId: "${process.env.COLUMN_AWAITING_CONFIRMATION}"`);
-`🔧 assigned: [${process.env.YOUGILE_GLM_USER_ID}]`);
+          console.log(`🔧 Отправляю задачу в YouGile...`);
 
           const taskResponse = await fetch('https://rocketup.yougile.com/api-v2/tasks', {
             method: 'POST',
@@ -423,7 +416,7 @@ if (!glmData) {
           });
 
           const responseText = await taskResponse.text();
-          `🔧 YouGile статус: ${taskResponse.status}`);
+          console.log(`🔧 YouGile статус: ${taskResponse.status}`);
 
           if (!taskResponse.ok) {
             console.error(`❌ YouGile ошибка: ${taskResponse.status} - ${responseText}`);
@@ -447,35 +440,39 @@ if (!glmData) {
         }
       }
 
-      // ✅ Перемещаем письма ТОЛЬКО если все задачи созданы успешно
-if (createdTasks.length === tasks.length) {
-  await mailClient.messageFlagsAdd(processedUids, ["\\Seen"], { uid: true });
-  
-  try {
-    await mailClient.messageMove(processedUids, "AI_DONE", { uid: true });
-    console.log(`📁 Перемещено в AI_DONE`);
-  } catch (moveErr) {
-    console.warn("⚠️ Не удалось переместить:", moveErr.message);
-  }
-  
-  console.log(`✅ Создано ${createdTasks.length} задач из ${tasks.length}`);
-  await sendNotification(
-  `📧 <b>Новая задача из email!</b>\n\n` +
-  `📝 ${tasks[0]?.title || 'Без названия'}\n` +
-  `📊 Создано задач: ${createdTasks.length}`
-);
-  return createdTasks.length;
-  
-} else {
-  // ❌ Не все задачи созданы — НЕ перемещаем письма
-  console.warn(`⚠️ Создано только ${createdTasks.length} из ${tasks.length} задач`);
-  console.warn(`⚠️ Письма НЕ перемещены в AI_DONE для повторной обработки`);
-  
-  // Помечаем как прочитанные, но НЕ перемещаем
-  await mailClient.messageFlagsAdd(processedUids, ["\\Seen"], { uid: true });
-  
-  return createdTasks.length;
-}
+      // ✅ ПЕРЕМЕЩАЕМ ПИСЬМА ТОЛЬКО если все задачи созданы успешно
+      if (createdTasks.length === tasks.length) {
+        await mailClient.messageFlagsAdd(processedUids, ["\\Seen"], { uid: true });
+        
+        try {
+          await mailClient.messageMove(processedUids, "AI_DONE", { uid: true });
+          console.log(`📁 Перемещено в AI_DONE`);
+        } catch (moveErr) {
+          console.warn("⚠️ Не удалось переместить:", moveErr.message);
+        }
+        
+        console.log(`✅ Создано ${createdTasks.length} задач из ${tasks.length}`);
+        
+        // ✅ УВЕДОМЛЕНИЕ В TELEGRAM
+        const { sendNotification } = require('./telegram-bot');
+        await sendNotification(
+          `📧 <b>Новая задача из email!</b>\n\n` +
+          `📝 ${tasks[0]?.title || 'Без названия'}\n` +
+          `📊 Создано задач: ${createdTasks.length}`
+        );
+        
+        return createdTasks.length;
+        
+      } else {
+        // ❌ Не все задачи созданы — НЕ перемещаем письма
+        console.warn(`⚠️ Создано только ${createdTasks.length} из ${tasks.length} задач`);
+        console.warn(`⚠️ Письма НЕ перемещены в AI_DONE для повторной обработки`);
+        
+        // Помечаем как прочитанные, но НЕ перемещаем
+        await mailClient.messageFlagsAdd(processedUids, ["\\Seen"], { uid: true });
+        
+        return createdTasks.length;
+      }
 
     } finally {
       lock.release();
