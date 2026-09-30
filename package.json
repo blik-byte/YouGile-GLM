@@ -1,21 +1,29 @@
 {
   "name": "yougile-glm",
-  "version": "1.0.0",
+  "version": "1.1.0",
+  "description": "Автономный AI-агент для автоматизации бизнес-задач через YouGile, email и Telegram (GLM-4.5 Flash)",
   "main": "index.js",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "check": "node scripts/check.js",
+    "pcloud:token": "node scripts/get-pcloud-token.js",
+    "test": "node scripts/test-fixes.js"
   },
   "dependencies": {
-  "express": "^4.18.2",
-  "dotenv": "^16.0.3",
-  "cors": "^2.8.5",
-  "openai": "^4.104.0",
-  "imapflow": "^1.0.183",
-  "mailparser": "^3.7.2",
-  "mongodb": "^6.12.0",
-  "docx": "^8.2.0",
-  "exceljs": "^4.4.0",
-  "googleapis": "^144.0.0",
-  "node-telegram-bot-api": "^0.66.0"
-}
+    "cors": "^2.8.5",
+    "docx": "^8.2.0",
+    "dotenv": "^16.0.3",
+    "exceljs": "^4.4.0",
+    "express": "^4.18.2",
+    "googleapis": "^144.0.0",
+    "imapflow": "^1.0.183",
+    "mailparser": "^3.7.2",
+    "mongodb": "^6.12.0",
+    "node-telegram-bot-api": "^0.66.0"
+  }
 }
