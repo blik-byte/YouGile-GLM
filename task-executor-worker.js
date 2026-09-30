@@ -1,3 +1,5 @@
+const { sendNotification } = require('./telegram-bot');
+
 // task-executor-worker.js
 const { runAgent } = require('./ai-agent');
 const executors = require('./tool-executors');
@@ -73,11 +75,16 @@ async function checkTasksForExecution() {
   }
   
   console.log(`✅ Задача ${task.id} выполнена`);
+  await sendNotification(
+  `✅ <b>Задача выполнена!</b>\n\n📝 ${task.title}`
+);
   
 } catch (error) {
   console.error(`❌ Ошибка выполнения задачи ${task.id}:`, error.message);
   await executors.updateTaskStatus(task.id, 'Ошибка');
   await executors.addComment(task.id, `❌ Ошибка: ${error.message}`);
+  await sendNotification(
+  `❌ <b>Ошибка выполнения задачи!</b>\n\n📝 ${task.title}\n⚠️ ${error.message}`);
 }
     }
   } catch (error) {
