@@ -1,6 +1,5 @@
 // telegram-bot.js
 const TelegramBot = require('node-telegram-bot-api');
-const { createYougileTask } = require('./email-worker');
 
 let bot = null;
 
@@ -43,6 +42,7 @@ function initBot() {
 
   // Команда /task
   bot.onText(/\/task (.+)/, async (msg, match) => {
+    const { createYougileTask } = require('./email-worker');
     const chatId = msg.chat.id;
     const taskText = match[1];
     
@@ -115,7 +115,7 @@ function initBot() {
   // Обработка любого текстового сообщения
   bot.on('message', async (msg) => {
     if (!msg.text || msg.text.startsWith('/')) return;
-    
+    const { createYougileTask } = require('./email-worker');
     const chatId = msg.chat.id;
     const text = msg.text;
     
