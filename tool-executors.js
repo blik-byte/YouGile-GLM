@@ -1,260 +1,458 @@
 // tool-executors.js
-const db = require('./db');
-const { createDocx, createXlsx, createTxt } = require('./document-generator');  // ← ДОБАВЬ ЭТО
-const { uploadFile } = require('./drive-client');  // ← ДОБАВЬ ЭТО
-const fs = require('fs');
+// Реализация инструментов, которые агент вызывает через GLM function calling.
+//
+// Изменения:
+//  • web_search переведён на цепочку провайдеров (lib/search.js) вместо
+//    нерабочего DuckDuckGo Instant Answer API.
+//  • добавлен web_analysis — глубокое чтение страницы (был заявлен в README
+//    и в tools_needed, но не существовал: агент обещал то, чего нет).
+//  • create_document грузит файлы в pCloud вместо Google Drive, у которого
+//    Service Account не имеет квоты хранилища.
+//  • все вызовы YouGile идут через lib/yougile-client (таймауты, ретраи,
+//    экранирование HTML, пагинация).
+//  • аргументы инструментов валидируются: раньше query.substring() падал,
+//    если модель не передавала query.
+//  • временные файлы удаляются гарантированно (try/finally).
 
-// Функция createDocument остаётся почти такой же:
-async function createDocument(format, filename, title = '', content = '', tables = []) {
-  console.log(`📄 Создаю документ ${filename}.${format}...`);
-  
+const fs = require('fs/promises');
+
+const db = require('./db');
+const pcloud = require('./pcloud-client');
+const yougile = require('./lib/yougile-client');
+const search = require('./lib/search');
+const { fetchReadable } = require('./lib/web-content');
+const { createDocx, createXlsx, createTxt, removeTemp } = require('./document-generator');
+const { toStr, sanitizeFilename } = require('./lib/text');
+const { config } = require('./lib/config');
+
+/* ------------------------------------------------------------------ */
+// web_search
+/* ------------------------------------------------------------------ */
+
+/**
+ * Поиск в интернете.
+ * @param {string} query
+ * @param {object} [options]
+ * @returns {Promise<object>} результаты или явная ошибка (никогда не «пусто и тихо»)
+ */
+async function webSearch(query, options = {}) {
+  const normalized = toStr(query).trim();
+
+  if (!normalized) {
+    return {
+      success: false,
+      error: 'Не передан параметр query. Укажите конкретный поисковый запрос.',
+    };
+  }
+
+  console.log(`🔍 Поиск: "${normalized.slice(0, 80)}"`);
+
   try {
-    let filePath;
-    
-    if (format === 'docx') {
-      filePath = await createDocx(filename, title, content);
-    } else if (format === 'xlsx') {
-      filePath = await createXlsx(filename, tables);
-    } else if (format === 'txt') {
-      filePath = await createTxt(filename, content);
-    } else {
-      throw new Error(`Неподдерживаемый формат: ${format}`);
+    const result = await search.search(normalized, options);
+
+    if (result.error) {
+      return { success: false, query: normalized, error: result.error, providersTried: result.providersTried };
     }
-    
-    // Загружаем в Google Drive
-    const result = await uploadFile(filePath, `${filename}.${format}`);
-    
-    // Удаляем локальный файл
-    fs.unlinkSync(filePath);
-    
-    if (result.success) {
-      console.log(`✅ Документ доступен: ${result.link}`);
+
+    return { success: true, ...result };
+  } catch (error) {
+    console.error(`❌ webSearch: ${error.message}`);
+    return { success: false, query: normalized, error: error.message };
+  }
+}
+
+/* ------------------------------------------------------------------ */
+// web_analysis
+/* ------------------------------------------------------------------ */
+
+/**
+ * Чтение и анализ содержимого веб-страницы.
+ *
+ * Стратегия:
+ *   1. Tavily Extract (если задан ключ) — справляется со страницами,
+ *      где контент подгружается JavaScript.
+ *   2. Собственное извлечение текста из HTML (lib/web-content.js) — без ключей.
+ *   3. Если вопрос сформулирован — краткая выжимка по тексту через GLM.
+ *
+ * @param {string} url
+ * @param {string} [question] - на что именно смотреть на странице
+ */
+async function webAnalysis(url, question = '') {
+  const target = toStr(url).trim();
+
+  if (!target) {
+    return { success: false, error: 'Не передан параметр url.' };
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(target);
+  } catch {
+    return { success: false, error: `Некорректный URL: ${target}` };
+  }
+
+  if (!/^https?:$/.test(parsed.protocol)) {
+    return { success: false, error: `Поддерживаются только http(s) ссылки, получено: ${parsed.protocol}` };
+  }
+
+  console.log(`📖 Анализ страницы: ${parsed.href.slice(0, 100)}`);
+
+  try {
+    // 1. Tavily Extract
+    let content = null;
+    let source = 'tavily-extract';
+
+    const extracted = await search.tavilyExtract(parsed.href);
+    if (extracted && extracted.length > 0 && toStr(extracted[0].content).length > 200) {
+      content = toStr(extracted[0].content);
+    }
+
+    // 2. Собственное извлечение
+    if (!content) {
+      const readable = await fetchReadable(parsed.href, { timeout: config.searchTimeoutMs });
+      content = readable.text;
+      source = 'html-extract';
+
+      return await finishAnalysis({
+        url: parsed.href,
+        source,
+        title: readable.title,
+        description: readable.description,
+        headings: readable.headings,
+        wordCount: readable.wordCount,
+        content,
+        question,
+      });
+    }
+
+    // Для Tavily-пути заголовки берём из HTML, если получится
+    let meta = { title: null, description: null, headings: [] };
+    try {
+      const readable = await fetchReadable(parsed.href, { timeout: 15000, maxChars: 2000 });
+      meta = { title: readable.title, description: readable.description, headings: readable.headings };
+    } catch {
+      /* мета необязательна */
+    }
+
+    return await finishAnalysis({
+      url: parsed.href,
+      source,
+      title: meta.title,
+      description: meta.description,
+      headings: meta.headings,
+      wordCount: content.split(/\s+/).length,
+      content,
+      question,
+    });
+  } catch (error) {
+    console.error(`❌ webAnalysis: ${error.message}`);
+    return {
+      success: false,
+      url: parsed.href,
+      error: error.message,
+      hint: 'Попробуйте web_search по этой теме или найдите другой источник.',
+    };
+  }
+}
+
+/**
+ * Если задан вопрос — просим GLM сделать выжимку по извлечённому тексту.
+ * Без вопроса возвращаем структурированное содержимое страницы.
+ */
+async function finishAnalysis({ url, source, title, description, headings, wordCount, content, question }) {
+  const maxContent = 12000;
+  const body = content.length > maxContent ? content.slice(0, maxContent) : content;
+  const truncated = content.length > maxContent;
+
+  const result = {
+    success: true,
+    url,
+    source,
+    title,
+    description,
+    headings: (headings || []).slice(0, 40),
+    wordCount,
+    truncated,
+  };
+
+  const normalizedQuestion = toStr(question).trim();
+
+  if (normalizedQuestion) {
+    try {
+      const { chatJson } = require('./lib/glm-client');
+      const answer = await chatJson(
+        'Ты аналитик. Ответь строго по содержимому страницы. Если данных нет — так и напиши, не выдумывай. ' +
+          'Верни JSON: {"answer": "развёрнутый ответ", "key_facts": ["факт 1", "факт 2"], "confidence": "high|medium|low"}',
+        `Вопрос: ${normalizedQuestion}\n\nURL: ${url}\nЗаголовок: ${title || '—'}\n\nСодержимое страницы:\n${body}`,
+        { timeout: 60000 }
+      );
+      result.question = normalizedQuestion;
+      result.answer = toStr(answer.answer);
+      result.keyFacts = Array.isArray(answer.key_facts) ? answer.key_facts.slice(0, 15) : [];
+      result.confidence = answer.confidence || 'unknown';
+    } catch (error) {
+      console.warn(`⚠️ Не удалось сформировать выжимку: ${error.message}`);
+      result.question = normalizedQuestion;
+      result.answer = null;
+      result.analysisError = error.message;
+      result.content = body;
+    }
+  } else {
+    result.content = body;
+  }
+
+  return result;
+}
+
+/* ------------------------------------------------------------------ */
+// create_document
+/* ------------------------------------------------------------------ */
+
+const SUPPORTED_FORMATS = ['docx', 'xlsx', 'txt', 'md', 'csv', 'json'];
+
+/**
+ * Создание документа и загрузка в облако.
+ * @returns {Promise<{success:boolean, link?:string, downloadLink?:string, filename?:string, error?:string}>}
+ */
+async function createDocument(format, filename, title = '', content = '', tables = []) {
+  const fmt = toStr(format).trim().toLowerCase();
+  const safeName = sanitizeFilename(toStr(filename).trim() || 'document', 'document');
+
+  if (!SUPPORTED_FORMATS.includes(fmt)) {
+    return {
+      success: false,
+      error: `Неподдерживаемый формат "${format}". Доступны: ${SUPPORTED_FORMATS.join(', ')}`,
+    };
+  }
+
+  console.log(`📄 Создаю документ ${safeName}.${fmt}...`);
+
+  let filePath = null;
+
+  try {
+    if (fmt === 'docx') {
+      if (!toStr(content).trim() && !toStr(title).trim()) {
+        return { success: false, error: 'Для docx нужно передать title или content' };
+      }
+      filePath = await createDocx(safeName, title, content);
+    } else if (fmt === 'xlsx') {
+      const rows = Array.isArray(tables) ? tables : [];
+      if (rows.length === 0) {
+        return {
+          success: false,
+          error: 'Для xlsx нужен непустой массив tables: [{name, headers, rows}]',
+        };
+      }
+      filePath = await createXlsx(safeName, rows);
+    } else if (fmt === 'txt') {
+      if (!toStr(content).trim()) {
+        return { success: false, error: 'Для txt нужно передать content' };
+      }
+      filePath = await createTxt(safeName, content);
+    } else if (fmt === 'md') {
+      filePath = await createTxt(safeName, content);
+      filePath = await renameExtension(filePath, 'md');
+    } else if (fmt === 'csv') {
+      filePath = await createTxt(safeName, tablesToCsv(tables, content));
+      filePath = await renameExtension(filePath, 'csv');
+    } else if (fmt === 'json') {
+      const json = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+      try {
+        JSON.parse(json);
+      } catch (error) {
+        return { success: false, error: `content не является валидным JSON: ${error.message}` };
+      }
+      filePath = await createTxt(safeName, json);
+      filePath = await renameExtension(filePath, 'json');
+    }
+
+    const finalName = `${safeName}.${fmt}`;
+
+    // Облако: pCloud. Google Drive убран — Service Account не имеет квоты.
+    if (!pcloud.isConfigured()) {
+      // Документ создан, но отдать ссылку нечем. Возвращаем содержимое текстом,
+      // чтобы результат не потерялся, и честно сообщаем о проблеме.
+      const preview = toStr(content).slice(0, 4000);
+      await removeTemp(filePath);
+
       return {
-        success: true,
-        link: result.link,
-        downloadLink: result.downloadLink,
-        filename: `${filename}.${format}`,
-        fileId: result.fileId
+        success: false,
+        error:
+          'Облачное хранилище не настроено (нет PCLOUD_AUTH_TOKEN). ' +
+          'Документ создать удалось, но разместить его негде. ' +
+          'Передайте содержимое текстом в комментарии к задаче и сообщите пользователю о проблеме.',
+        filename: finalName,
+        contentPreview: preview,
       };
-    } else {
-      throw new Error(result.error);
     }
-    
+
+    const uploaded = await pcloud.upload(filePath, finalName);
+
+    if (!uploaded.success) {
+      return {
+        success: false,
+        filename: finalName,
+        error: `Не удалось загрузить в pCloud: ${uploaded.error}`,
+      };
+    }
+
+    console.log(`✅ Документ доступен: ${uploaded.link || uploaded.downloadLink}`);
+
+    return {
+      success: true,
+      provider: 'pcloud',
+      filename: uploaded.filename || finalName,
+      fileId: uploaded.fileId,
+      size: uploaded.size,
+      link: uploaded.link || uploaded.shortlink,
+      shortlink: uploaded.shortlink || null,
+      downloadLink: uploaded.downloadLink || null,
+      publicLinkWarning: uploaded.publicLinkError || undefined,
+    };
   } catch (error) {
     console.error(`❌ Ошибка создания документа: ${error.message}`);
+    return { success: false, error: error.message };
+  } finally {
+    // Гарантированно убираем временный файл — раньше unlinkSync стоял вне
+    // блока finally и при ошибке загрузки файл оставался в /tmp навсегда
+    await removeTemp(filePath);
+  }
+}
+
+async function renameExtension(filePath, newExt) {
+  if (!filePath) return filePath;
+  const target = filePath.replace(/\.[^.]+$/, `.${newExt}`);
+  if (target === filePath) return filePath;
+  await fs.rename(filePath, target);
+  return target;
+}
+
+function tablesToCsv(tables, content) {
+  if (toStr(content).trim()) return content;
+  if (!Array.isArray(tables) || tables.length === 0) return '';
+
+  const escape = (value) => {
+    const str = toStr(value);
+    return /[",\n;]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+  };
+
+  return tables
+    .map((table) => {
+      const lines = [];
+      if (Array.isArray(table.headers)) lines.push(table.headers.map(escape).join(';'));
+      for (const row of table.rows || []) {
+        lines.push((Array.isArray(row) ? row : [row]).map(escape).join(';'));
+      }
+      return lines.join('\n');
+    })
+    .join('\n\n');
+}
+
+/* ------------------------------------------------------------------ */
+// Сохранение результатов
+/* ------------------------------------------------------------------ */
+
+async function saveResult(taskId, step, data) {
+  const id = toStr(taskId).trim();
+  if (!id) {
+    return { success: false, error: 'Не передан taskId. Используйте реальный ID задачи из контекста.' };
+  }
+
+  try {
+    const insertedId = await db.saveTaskStep(id, toStr(step, 'без названия'), data);
+    return { success: true, id: String(insertedId) };
+  } catch (error) {
+    console.error(`❌ saveResult: ${error.message}`);
     return { success: false, error: error.message };
   }
 }
 
-// 🔍 Умный поиск с кэшем и fallback
-async function webSearch(query) {
-  console.log(`🔍 Поиск: "${query.substring(0, 50)}..."`);
-  
-  // 1. Проверяем кэш (7 дней)
-  try {
-    const cached = await db.getCachedSearch(query);
-    if (cached) {
-      console.log(`📦 Из кэша`);
-      return { ...cached, from_cache: true };
-    }
-  } catch (e) {
-    console.warn(`⚠️ Ошибка кэша: ${e.message}`);
-  }
-  
-  // 2. Tavily (если есть ключ) — 1000 запросов/мес бесплатно
-  if (process.env.TAVILY_API_KEY) {
-    try {
-      const response = await fetch('https://api.tavily.com/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          api_key: process.env.TAVILY_API_KEY,
-          query,
-          max_results: 5,
-          include_answer: true,
-          search_depth: 'basic'
-        })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        const result = {
-          query,
-          answer: data.answer || 'Нет краткого ответа',
-          results: (data.results || []).map(r => ({
-            title: r.title,
-            url: r.url,
-            content: (r.content || '').substring(0, 500)
-          })),
-          source: 'tavily'
-        };
-        
-        try { await db.cacheSearch(query, result); } catch (_) {}
-        return result;
-      }
-    } catch (e) {
-      console.warn(`⚠️ Tavily error: ${e.message}`);
-    }
-  }
-  
-  // 3. Fallback на DuckDuckGo
-  try {
-    const response = await fetch(
-      `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
-    );
-    const data = await response.json();
-    
-    const result = {
-      query,
-      answer: data.Abstract || 'Нет краткого описания',
-      results: (data.RelatedTopics || [])
-        .filter(t => t.Text)
-        .slice(0, 5)
-        .map(t => ({
-          title: (t.Text || '').substring(0, 100),
-          url: t.FirstURL,
-          content: t.Text
-        })),
-      source: 'duckduckgo'
-    };
-    
-    try { await db.cacheSearch(query, result); } catch (_) {}
-    return result;
-  } catch (e) {
-    return { query, error: e.message, source: 'fallback' };
-  }
-}
+/* ------------------------------------------------------------------ */
+// YouGile
+/* ------------------------------------------------------------------ */
 
-// 💾 Сохранение результата в MongoDB
-async function saveResult(taskId, step, data) {
-  try {
-    const id = await db.saveTaskStep(taskId, step, data);
-    return { success: true, id: id.toString() };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-}
-
-// 🔄 Обновление статуса задачи в YouGile
 async function updateTaskStatus(taskId, status) {
-  const COLUMN_IDS = {
-    'Выполняется': process.env.COLUMN_EXECUTING,
-    'Готово': process.env.COLUMN_DONE,
-    'Ошибка': process.env.COLUMN_ERROR
-  };
-  
-  const columnId = COLUMN_IDS[status];
-  console.log(`🔄 Обновляю статус задачи ${taskId} → ${status} (columnId: ${columnId})`);
-  
-  if (!columnId) {
-    console.warn(`⚠️ Неизвестный статус: ${status}`);
-    return { success: false, error: `Unknown status: ${status}` };
+  const id = toStr(taskId).trim();
+  const newStatus = toStr(status).trim();
+
+  if (!id) return { success: false, error: 'Не передан taskId' };
+  if (!newStatus) {
+    return {
+      success: false,
+      error: 'Не передан status. Допустимые значения: Выполняется, Готово, Ошибка',
+    };
   }
-  
+
+  console.log(`🔄 Статус задачи ${id} → ${newStatus}`);
+
   try {
-    const payload = { columnId };
-    
-    // Если статус "Готово" — помечаем задачу как выполненную
-    if (status === 'Готово') {
-      payload.completed = true;
-      console.log(`✅ Помечаю задачу как выполненную (completed: true)`);
-    }
-    
-    const response = await fetch(
-      `https://rocketup.yougile.com/api-v2/tasks/${taskId}`,
-      {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
-        },
-        body: JSON.stringify(payload)
-      }
-    );
-    
-    const responseText = await response.text();
-    console.log(`🔄 YouGile статус: ${response.status}`);
-    console.log(`🔄 YouGile ответ: ${responseText.substring(0, 300)}`);
-    
-    return { success: response.ok, status: response.status };
-  } catch (e) {
-    console.error(`❌ Ошибка updateTaskStatus: ${e.message}`);
-    return { success: false, error: e.message };
+    const result = await yougile.setStatus(id, newStatus);
+    return result.success
+      ? { success: true, taskId: id, status: newStatus }
+      : { success: false, taskId: id, status: newStatus, error: result.error };
+  } catch (error) {
+    console.error(`❌ updateTaskStatus: ${error.message}`);
+    return { success: false, taskId: id, error: error.message };
   }
 }
 
-// 💬 Добавление комментария к задаче
 async function addComment(taskId, text) {
-  console.log(`💬 Добавляю комментарий к задаче ${taskId}...`);
-  console.log(`💬 Текст (первые 200 симв.): ${text.substring(0, 200)}`);
-  
+  const id = toStr(taskId).trim();
+  const body = toStr(text);
+
+  if (!id) return { success: false, error: 'Не передан taskId' };
+  if (!body.trim()) return { success: false, error: 'Пустой текст комментария' };
+
+  console.log(`💬 Комментарий к задаче ${id} (${body.length} симв.)`);
+
   try {
-    // В YouGile chatId = taskId
-    const response = await fetch(
-      `https://rocketup.yougile.com/api-v2/chats/${taskId}/messages`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
-        },
-        body: JSON.stringify({
-          text: text,
-          textHtml: `<p>${text.replace(/\n/g, '<br>')}</p>`,
-          label: 'AI'
-        })
-      }
-    );
-    
-    const responseText = await response.text();
-    console.log(`💬 YouGile статус: ${response.status}`);
-    console.log(`💬 YouGile ответ: ${responseText.substring(0, 300)}`);
-    
-    return { success: response.ok, status: response.status };
-  } catch (e) {
-    console.error(`❌ Ошибка addComment: ${e.message}`);
-    return { success: false, error: e.message };
+    await yougile.addChatMessage(id, body, { label: 'AI' });
+    return { success: true, taskId: id, length: body.length };
+  } catch (error) {
+    console.error(`❌ addComment: ${error.message}`);
+    return { success: false, taskId: id, error: error.message };
   }
 }
 
-
-// Подписка на чаты
-async function subscribeToWebhooks() {
-  const webhookUrl = `https://yougile-glm.onrender.com/webhook/yougile`;
-  
-  console.log(`🔔 Подписываюсь на вебхуки YouGile: ${webhookUrl}`);
-  
-  try {
-    const response = await fetch(
-      'https://rocketup.yougile.com/api-v2/webhooks',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}`
-        },
-        body: JSON.stringify({
-          url: webhookUrl,
-          event: 'chat_message-created'  // ← правильное имя!
-        })
-      }
-    );
-    
-    const data = await response.json();
-    console.log(`✅ Webhook подписка создана:`, data);
-    return data;
-  } catch (e) {
-    console.error(`❌ Ошибка подписки на вебхуки: ${e.message}`);
-    return null;
-  }
+/**
+ * Подписка на вебхуки YouGile.
+ * Идемпотентная: раньше при каждом старте создавалась НОВАЯ подписка, поэтому
+ * после каждого деплоя накапливался дубль и сообщения обрабатывались N раз.
+ * URL больше не захардкожен — берётся из PUBLIC_BASE_URL.
+ */
+async function subscribeToWebhooks(event = 'chat_message-created') {
+  return yougile.ensureWebhook(event);
 }
 
+/* ------------------------------------------------------------------ */
+/* Диагностика (используется дашбордом и /stats)                       */
+/* ------------------------------------------------------------------ */
+
+async function getProviderStatus() {
+  return {
+    search: {
+      providers: search.providerOrder(),
+      tavily: Boolean(config.tavilyApiKey),
+      brave: Boolean(process.env.BRAVE_API_KEY),
+      googleCse: Boolean(process.env.GOOGLE_API_KEY && process.env.GOOGLE_CX),
+      wikipedia: true,
+    },
+    cloud: {
+      provider: 'pcloud',
+      configured: pcloud.isConfigured(),
+      region: config.pcloudRegion,
+    },
+  };
+}
 
 module.exports = {
   webSearch,
+  webAnalysis,
+  createDocument,
   saveResult,
   updateTaskStatus,
   addComment,
   subscribeToWebhooks,
-  createDocument
+  getProviderStatus,
+  SUPPORTED_FORMATS,
 };
