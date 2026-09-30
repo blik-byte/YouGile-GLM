@@ -352,3 +352,36 @@ app.listen(PORT, async () => {
 
 // Запуск Telegram-бота
 initBot();
+// 📊 Ежедневный отчёт в 9:00
+let lastReportDate = null;
+setInterval(async () => {
+  const now = new Date();
+  const today = now.toDateString();
+  
+  if (now.getHours() === 9 && now.getMinutes() < 5 && lastReportDate !== today) {
+    lastReportDate = today;
+    try {
+      const { sendNotification } = require('./telegram-bot');
+      
+      const columns = [
+        { name: '🔄 В работе', id: process.env.COLUMN_TO_EXECUTE },
+        { name: '⏳ Ждут подтверждения', id: process.env.COLUMN_AWAITING_CONFIRMATION }
+      ];
+      
+      let report = `📊 <b>Ежедневный отчёт</b>\n📅 ${now.toLocaleDateString('ru-RU')}\n\n`;
+      
+      for (const col of columns) {
+        if (!col.id) continue;
+        const res = await fetch(`https://rocketup.yougile.com/api-v2/tasks?columnId=${col.id}`, {
+          headers: { 'Authorization': `Bearer ${process.env.YOUGILE_GLM_API_KEY}` }
+        });
+        const data = await res.json();
+        report += `${col.name}: ${data.paging?.count || 0}\n`;
+      }
+      
+      await sendNotification(report);
+    } catch (e) {
+      console.error('❌ Ошибка отчёта:', e.message);
+    }
+  }
+}, 60 * 1000);
