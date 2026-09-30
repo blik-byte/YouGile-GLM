@@ -28,6 +28,8 @@ const cors = require('cors');
 
 const { config, validate } = require('./lib/config');
 const dashboard = require('./lib/dashboard');
+const cloud = require('./lib/cloud');
+const r2 = require('./r2-client');
 const db = require('./db');
 const yougile = require('./lib/yougile-client');
 const { chatJson } = require('./lib/glm-client');
@@ -231,6 +233,62 @@ async function resetRunHandler(req, res) {
 
 app.post('/runs/:taskId/reset', requireAdmin, resetRunHandler);
 app.post('/api/runs/:taskId/reset', requireAdmin, resetRunHandler);
+
+/* ------------------------------------------------------------------ */
+/* Раздача файлов из приватного бакета R2                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * GET /files/<подпись>/<имя>?k=<ключ объекта>
+ *
+ * Используется, когда R2_PUBLIC_BASE_URL не задан и бакет остаётся приватным.
+ * Для бизнес-документов это предпочтительнее публичного бакета: файл доступен
+ * только обладателю подписанной ссылки, а подпись (HMAC-SHA256 от ключа объекта)
+ * нельзя подделать для другого файла без FILES_SECRET/ADMIN_TOKEN.
+ *
+ * Ссылки не имеют срока действия — важно, потому что они попадают
+ * в комментарии задач YouGile, которые читают спустя недели.
+ */
+app.get('/files/:signature/:name', async (req, res) => {
+  const key = String(req.query.k || '');
+
+  if (!key) return res.status(400).type('text/plain; charset=utf-8').send('Не указан файл');
+
+  if (!config.filesSecret) {
+    return res
+      .status(503)
+      .type('text/plain; charset=utf-8')
+      .send('Раздача файлов отключена: не задан FILES_SECRET или ADMIN_TOKEN');
+  }
+
+  if (!r2.verifySignature(key, req.params.signature)) {
+    return res.status(403).type('text/plain; charset=utf-8').send('Недействительная ссылка на файл');
+  }
+
+  try {
+    const object = await r2.getObject(key);
+
+    if (!object) {
+      return res.status(404).type('text/plain; charset=utf-8').send('Файл не найден в хранилище');
+    }
+
+    res.setHeader('Content-Type', object.contentType);
+    if (object.size) res.setHeader('Content-Length', String(object.size));
+    if (object.disposition) res.setHeader('Content-Disposition', object.disposition);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+
+    // Поток из R2 (Readable из @aws-sdk) pipe'им в ответ
+    object.body.pipe(res);
+    object.body.on('error', (error) => {
+      console.error(`❌ Раздача файла ${key}: ${error.message}`);
+      if (!res.headersSent) res.status(502).end();
+      else res.destroy();
+    });
+  } catch (error) {
+    console.error(`❌ /files: ${error.message}`);
+    if (!res.headersSent) res.status(500).type('text/plain; charset=utf-8').send('Ошибка хранилища');
+  }
+});
 
 /* ------------------------------------------------------------------ */
 /* Вебхук YouGile                                                      */
@@ -444,6 +502,10 @@ async function start() {
   });
 
   initBot();
+
+  // Проверяем облачное хранилище и пишем в лог понятный диагноз
+  await cloud.selfTest().catch((error) => console.error(`❌ Проверка облака: ${error.message}`));
+
   await startEmailWorker();
   startTaskExecutorWorker();
   startReportScheduler();

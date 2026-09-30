@@ -17,7 +17,7 @@
 const fs = require('fs/promises');
 
 const db = require('./db');
-const pcloud = require('./pcloud-client');
+const cloud = require('./lib/cloud');
 const yougile = require('./lib/yougile-client');
 const search = require('./lib/search');
 const { fetchReadable } = require('./lib/web-content');
@@ -268,8 +268,9 @@ async function createDocument(format, filename, title = '', content = '', tables
 
     const finalName = `${safeName}.${fmt}`;
 
-    // Облако: pCloud. Google Drive убран — Service Account не имеет квоты.
-    if (!pcloud.isConfigured()) {
+    // Облако: провайдер выбирается переменной CLOUD_PROVIDER (r2 | pcloud | none).
+    // Google Drive убран — Service Account не имеет квоты хранилища.
+    if (!cloud.isConfigured()) {
       // Документ создан, но отдать ссылку нечем. Возвращаем содержимое текстом,
       // чтобы результат не потерялся, и честно сообщаем о проблеме.
       const preview = toStr(content).slice(0, 4000);
@@ -278,7 +279,7 @@ async function createDocument(format, filename, title = '', content = '', tables
       return {
         success: false,
         error:
-          'Облачное хранилище не настроено (нет PCLOUD_AUTH_TOKEN). ' +
+          'Облачное хранилище не настроено (CLOUD_PROVIDER=auto, ни R2, ни pCloud не заполнены). ' +
           'Документ создать удалось, но разместить его негде. ' +
           'Передайте содержимое текстом в комментарии к задаче и сообщите пользователю о проблеме.',
         filename: finalName,
@@ -286,13 +287,15 @@ async function createDocument(format, filename, title = '', content = '', tables
       };
     }
 
-    const uploaded = await pcloud.upload(filePath, finalName);
+    const uploaded = await cloud.upload(filePath, finalName);
 
     if (!uploaded.success) {
       return {
         success: false,
+        provider: uploaded.provider,
         filename: finalName,
-        error: `Не удалось загрузить в pCloud: ${uploaded.error}`,
+        error: `Не удалось загрузить в облако (${uploaded.provider}): ${uploaded.error}`,
+        hint: uploaded.hint || undefined,
       };
     }
 
@@ -300,9 +303,9 @@ async function createDocument(format, filename, title = '', content = '', tables
 
     return {
       success: true,
-      provider: 'pcloud',
+      provider: uploaded.provider,
       filename: uploaded.filename || finalName,
-      fileId: uploaded.fileId,
+      fileId: uploaded.fileId ?? uploaded.key ?? null,
       size: uploaded.size,
       link: uploaded.link || uploaded.shortlink,
       shortlink: uploaded.shortlink || null,
@@ -437,11 +440,7 @@ async function getProviderStatus() {
       googleCse: Boolean(process.env.GOOGLE_API_KEY && process.env.GOOGLE_CX),
       wikipedia: true,
     },
-    cloud: {
-      provider: 'pcloud',
-      configured: pcloud.isConfigured(),
-      region: config.pcloudRegion,
-    },
+    cloud: await cloud.status(),
   };
 }
 

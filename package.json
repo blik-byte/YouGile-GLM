@@ -12,10 +12,13 @@
     "dev": "node --watch index.js",
     "check": "node scripts/check.js",
     "pcloud:token": "node scripts/get-pcloud-token.js",
-    "test": "node scripts/test-fixes.js && node scripts/test-features.js && node scripts/test-prod-issues.js",
-    "test:prod": "node scripts/test-prod-issues.js"
+    "test": "node scripts/test-fixes.js && node scripts/test-features.js && node scripts/test-prod-issues.js && node scripts/test-cloud.js",
+    "test:prod": "node scripts/test-prod-issues.js",
+    "test:cloud": "node scripts/test-cloud.js",
+    "test:e2e": "node scripts/e2e-cloud.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1144.0",
     "cors": "^2.8.5",
     "docx": "^8.2.0",
     "dotenv": "^16.0.3",

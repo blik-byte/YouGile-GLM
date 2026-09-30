@@ -279,14 +279,25 @@
     const cloud = services.cloud || {};
     if (cloud.ok && cloud.data && cloud.data.configured) {
       const d = cloud.data;
-      const used = d.usedGb || 0, quota = d.quotaGb || 0;
-      const percent = quota > 0 ? Math.min(100, Math.round((used / quota) * 100)) : 0;
-      rows.push(serviceRow('pCloud', pill('подключен', 'ok'),
-        (d.email || '') + ' · регион ' + d.region + ' · ' + used + ' / ' + quota + ' ГБ' +
-        (quota > 0 ? '<div class="bar"><div style="width:' + percent + '%"></div></div>' : '')));
+      const label = d.provider === 'r2' ? 'Cloudflare R2' : d.provider === 'pcloud' ? 'pCloud' : 'Облако';
+
+      let detail;
+      if (d.provider === 'r2') {
+        detail = 'бакет ' + d.bucket + ' · отдача: ' + d.delivery +
+          (d.publicBaseUrl ? ' (' + d.publicBaseUrl + ')' : '') +
+          (d.objects !== null && d.objects !== undefined ? ' · объектов: ' + d.objects : '');
+      } else {
+        const used = d.usedGb || 0, quota = d.quotaGb || 0;
+        const percent = quota > 0 ? Math.min(100, Math.round((used / quota) * 100)) : 0;
+        detail = (d.email || '') + ' · регион ' + d.region + ' · ' + used + ' / ' + quota + ' ГБ' +
+          (quota > 0 ? '<div class="bar"><div style="width:' + percent + '%"></div></div>' : '');
+      }
+
+      rows.push(serviceRow(label, pill('подключено', 'ok'), detail));
     } else {
-      rows.push(serviceRow('pCloud', pill('не настроен', 'warn'),
-        cloud.ok ? (cloud.data && cloud.data.note) : cloud.error));
+      const d = (cloud.ok && cloud.data) || {};
+      rows.push(serviceRow('Облако', pill('не настроено', 'warn'),
+        cloud.ok ? (d.hint || d.error || 'провайдер не выбран') : cloud.error));
     }
 
     const search = services.search || {};

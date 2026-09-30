@@ -343,8 +343,11 @@ async function main() {
   await test('M22 createDocument: без настроенного облака возвращает понятную ошибку и содержимое', async () => {
     const result = await executors.createDocument('txt', 'тест-без-облака', '', 'Содержимое отчёта', []);
     assert.strictEqual(result.success, false);
-    assert.ok(/PCLOUD_AUTH_TOKEN/i.test(result.error), `нет упоминания переменной: ${result.error}`);
+    // Ошибка должна называть переменные, которые нужно заполнить
+    assert.ok(/CLOUD_PROVIDER|R2_ACCOUNT_ID|R2_BUCKET/i.test(result.error), `нет указания на настройки: ${result.error}`);
     assert.ok(result.contentPreview.includes('Содержимое отчёта'), 'результат работы потерян');
+    // И подсказывать модели, что делать дальше
+    assert.ok(/комментари/i.test(result.error), 'нет инструкции передать содержимое в комментарии');
   });
 
   await test('M22 googleapis больше не в зависимостях', () => {
@@ -636,11 +639,12 @@ async function main() {
     assert.ok(data.runtime.memory.rssMb > 0);
   });
 
-  await test('dashboard: предупреждает о критичных пробелах в конфигурации', () => {
-    const warnings = dashboard.collectConfigWarnings();
+  await test('dashboard: предупреждает о критичных пробелах в конфигурации', async () => {
+    const warnings = await dashboard.collectConfigWarnings();
     const texts = warnings.map((w) => w.text).join(' | ');
 
     assert.ok(warnings.every((w) => ['critical', 'warning', 'info'].includes(w.level)), 'неизвестный уровень предупреждения');
+    assert.ok(Array.isArray(warnings), 'collectConfigWarnings должен возвращать массив');
     assert.ok(/ADMIN_TOKEN/.test(texts) || process.env.ADMIN_TOKEN, 'нет предупреждения про ADMIN_TOKEN');
     assert.ok(/TELEGRAM_ADMIN_IDS/.test(texts) || process.env.TELEGRAM_ADMIN_IDS, 'нет предупреждения про whitelist');
     assert.ok(/COLUMN_TO_EXECUTE/.test(texts) || process.env.COLUMN_TO_EXECUTE, 'нет предупреждения про колонку');
