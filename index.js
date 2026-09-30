@@ -10,6 +10,8 @@ const { connectToMongo, getStats, getTaskResults } = require('./db');
 const { startTaskExecutorWorker } = require('./task-executor-worker');
 const { subscribeToWebhooks } = require('./tool-executors');
 const executors = require('./tool-executors');
+const { initBot } = require('./telegram-bot');
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -347,3 +349,6 @@ app.listen(PORT, async () => {
   // Подписываемся на вебхуки
   await subscribeToWebhooks();
 });
+
+// Запуск Telegram-бота
+initBot();
