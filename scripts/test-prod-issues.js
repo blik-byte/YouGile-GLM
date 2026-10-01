@@ -364,6 +364,39 @@ async function main() {
   });
 
   /* ================================================================== */
+  console.log('\n— 4. Telegram: конфликт поллинга (409) —');
+  /* ================================================================== */
+
+  await test('409 Conflict обрабатывается: поллинг уступает слот и повторяет', () => {
+    const source = fs.readFileSync(require.resolve('../telegram-bot'), 'utf8');
+
+    assert.ok(/polling_error/.test(source), 'нет обработчика polling_error');
+    assert.ok(/409|terminated by other getUpdates/.test(source), 'конфликт не распознаётся');
+    assert.ok(/stopPolling\(\)/.test(source), 'при конфликте поллинг должен останавливаться');
+    assert.ok(/startPolling\(\)/.test(source), 'после паузы поллинг должен возобновляться');
+
+    // Пауза растёт, чтобы не долбить Telegram во время пересечения dyno
+    assert.ok(/Math\.min\(15000 \* conflictRetries/.test(source), 'нет экспоненциальной паузы');
+    assert.ok(/conflictRetries = 0/.test(source), 'счётчик конфликтов должен сбрасываться');
+  });
+
+  await test('таймер отложенного перезапуска гасится при остановке бота', () => {
+    const source = fs.readFileSync(require.resolve('../telegram-bot'), 'utf8');
+    const stopFn = source.slice(source.indexOf('function stopBot'));
+    assert.ok(/clearTimeout\(conflictTimer\)/.test(stopFn), 'stopBot не очищает таймер перезапуска');
+  });
+
+  await test('unhandled error по-прежнему не роняет процесс', () => {
+    const source = fs.readFileSync(require.resolve('../telegram-bot'), 'utf8');
+    assert.ok(/bot\.on\('error'/.test(source));
+    assert.ok(/bot\.on\('polling_error'/.test(source));
+
+    const indexSource = fs.readFileSync(require.resolve('../index.js'), 'utf8');
+    assert.ok(/uncaughtException/.test(indexSource));
+    assert.ok(/unhandledRejection/.test(indexSource));
+  });
+
+  /* ================================================================== */
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${'='.repeat(60)}`);

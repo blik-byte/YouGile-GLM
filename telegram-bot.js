@@ -19,6 +19,11 @@ const yougile = require('./lib/yougile-client');
 
 let bot = null;
 
+// Счётчики для восстановления поллинга после 409 Conflict (см. polling_error)
+let conflictTimer = null;
+let conflictRetries = 0;
+let consecutivePollErrors = 0;
+
 /* ------------------------------------------------------------------ */
 /* Доступ (whitelist)                                                  */
 /* ------------------------------------------------------------------ */
@@ -228,6 +233,12 @@ async function requireAdmin(msg) {
 }
 
 function registerHandlers() {
+  // Любое входящее обновление доказывает, что поллинг жив — сбрасываем счётчики
+  bot.on('polling_message', () => {
+    conflictRetries = 0;
+    consecutivePollErrors = 0;
+  });
+
   bot.onText(/\/start(?:@\w+)?$/, async (msg) => {
     const chatId = String(msg.chat.id);
     const access = await resolveAccess(chatId);
@@ -508,7 +519,44 @@ function initBot() {
   // КРИТИЧНО: без этого обработчика любая сетевая ошибка поллинга приводит к
   // unhandled 'error' event и process.exit(1) — падает всё приложение целиком.
   bot.on('polling_error', (error) => {
-    console.error(`⚠️ Telegram polling_error: ${error.code || ''} ${error.message}`.trim());
+    const code = error.code || '';
+    const isConflict = /409|terminated by other getUpdates/i.test(String(error.message));
+
+    console.error(`⚠️ Telegram polling_error: ${code} ${error.message}`.trim());
+
+    // 409 Conflict означает, что слот getUpdates занят ДРУГИМ экземпляром бота.
+    // Штатная причина — пересечение старого и нового dyno во время деплоя Render.
+    // Без реакции библиотека долбит getUpdates и получает 409 бесконечно,
+    // то есть бот в этом экземпляре мёртв. Лечим уступкой слота с повтором:
+    // как только старый экземпляр умрёт, новый подхватит поллинг.
+    if (isConflict) {
+      conflictRetries++;
+      const delay = Math.min(15000 * conflictRetries, 120000);
+
+      console.warn(
+        ` Слот getUpdates занят другим экземпляром (попытка ${conflictRetries}). ` +
+          `Останавливаю поллинг и повторю через ${Math.round(delay / 1000)}с.`
+      );
+
+      try {
+        bot.stopPolling();
+      } catch {
+        /* уже остановлен */
+      }
+
+      if (conflictTimer) clearTimeout(conflictTimer);
+      conflictTimer = setTimeout(() => {
+        try {
+          bot.startPolling();
+          console.log('🔄 Telegram: поллинг перезапущен после конфликта');
+        } catch (restartError) {
+          console.error(`❌ Не удалось перезапустить поллинг: ${restartError.message}`);
+        }
+      }, delay);
+      conflictTimer.unref?.();
+    } else if (consecutivePollErrors++ % 20 === 0) {
+      console.warn('   (повторяющиеся ошибки поллинга логируются раз в 20, чтобы не засорять лог)');
+    }
   });
 
   bot.on('error', (error) => {
@@ -543,6 +591,11 @@ function initBot() {
 }
 
 function stopBot() {
+  if (conflictTimer) {
+    clearTimeout(conflictTimer);
+    conflictTimer = null;
+  }
+
   if (!bot) return;
   try {
     bot.stopPolling();
