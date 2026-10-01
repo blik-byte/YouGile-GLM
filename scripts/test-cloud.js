@@ -543,6 +543,160 @@ async function main() {
   });
 
   /* ================================================================== */
+  console.log('\n— Провайдер mongo: хранение без внешних сервисов и карт —');
+  /* ================================================================== */
+
+  /** Подмена модуля db заглушкой, чтобы не требовать реальную MongoDB. */
+  function withFakeDb(run) {
+    const dbPath = require.resolve('../db');
+    const original = require.cache[dbPath];
+    const stored = new Map();
+
+    require.cache[dbPath] = {
+      id: dbPath,
+      filename: dbPath,
+      loaded: true,
+      exports: {
+        COLLECTIONS: { files: 'stored_files' },
+        storeFile: async ({ key, filename, contentType, data }) => {
+          stored.set(key, {
+            buffer: Buffer.isBuffer(data) ? data : Buffer.from(data),
+            filename,
+            contentType,
+            size: (Buffer.isBuffer(data) ? data : Buffer.from(data)).length,
+          });
+          return key;
+        },
+        getFile: async (key) => stored.get(key) || null,
+        countFiles: async () => stored.size,
+        filesTotalBytes: async () => [...stored.values()].reduce((a, f) => a + f.size, 0),
+      },
+    };
+
+    for (const key of Object.keys(require.cache)) {
+      if (/lib[\\/]cloud\.js$/.test(key)) delete require.cache[key];
+    }
+
+    try {
+      return run(require('../lib/cloud'), stored);
+    } finally {
+      if (original) require.cache[dbPath] = original;
+      else delete require.cache[dbPath];
+      for (const key of Object.keys(require.cache)) {
+        if (/lib[\\/]cloud\.js$/.test(key)) delete require.cache[key];
+      }
+    }
+  }
+
+  await test('cloud: auto выбирает mongo, когда нет ни R2, ни pCloud, но есть база', () => {
+    setEnv({
+      R2_ACCOUNT_ID: null, R2_ACCESS_KEY_ID: null, R2_SECRET_ACCESS_KEY: null,
+      R2_BUCKET: null, PCLOUD_AUTH_TOKEN: null,
+      MONGODB_URI: 'mongodb://localhost:27017',
+      CLOUD_PROVIDER: 'auto',
+    });
+    const cloud = require('../lib/cloud');
+    assert.strictEqual(cloud.resolveProvider(), 'mongo');
+    assert.strictEqual(cloud.isConfigured(), true);
+  });
+
+  await test('cloud mongo: документ сохраняется и получает постоянную подписанную ссылку', async () => {
+    setEnv({
+      R2_ACCOUNT_ID: null, R2_ACCESS_KEY_ID: null, R2_SECRET_ACCESS_KEY: null, R2_BUCKET: null,
+      PCLOUD_AUTH_TOKEN: null, MONGODB_URI: 'mongodb://localhost:27017',
+      CLOUD_PROVIDER: 'mongo',
+      PUBLIC_BASE_URL: 'https://yougile-glm.onrender.com',
+      ADMIN_TOKEN: 'mongo-files-secret',
+    });
+
+    const tmp = path.join(os.tmpdir(), `mongo-doc-${Date.now()}.xlsx`);
+    fs.writeFileSync(tmp, 'байты таблицы');
+
+    await withFakeDb(async (cloud, stored) => {
+      try {
+        const result = await cloud.upload(tmp, 'Отчёт.xlsx');
+
+        assert.strictEqual(result.success, true, `ошибка: ${result.error}`);
+        assert.strictEqual(result.provider, 'mongo');
+        assert.ok(result.key.startsWith('mongo:'), `ключ: ${result.key}`);
+        assert.strictEqual(result.viaProxy, true);
+        assert.ok(result.link.startsWith('https://yougile-glm.onrender.com/files/'), result.link);
+        assert.strictEqual(stored.size, 1, 'файл не сохранился');
+
+        const file = [...stored.values()][0];
+        assert.strictEqual(file.buffer.toString(), 'байты таблицы');
+        assert.strictEqual(file.filename, 'Отчёт.xlsx');
+        assert.ok(file.contentType.includes('spreadsheetml'), file.contentType);
+
+        // Ссылка читается обратно через единый readFile
+        const key = result.key;
+        const parsed = new URL(result.link);
+        const signature = parsed.pathname.split('/')[2];
+        assert.strictEqual(parsed.searchParams.get('k'), key);
+
+        const r2 = require('../r2-client');
+        assert.strictEqual(r2.verifySignature(key, signature), true, 'подпись в ссылке невалидна');
+
+        const read = await cloud.readFile(key);
+        assert.ok(read, 'readFile не вернул файл');
+        assert.strictEqual(read.buffer.toString(), 'байты таблицы');
+        assert.strictEqual(read.filename, 'Отчёт.xlsx');
+      } finally {
+        fs.rmSync(tmp, { force: true });
+      }
+    });
+  });
+
+  await test('cloud mongo: без ADMIN_TOKEN и PUBLIC_BASE_URL ссылка не создаётся, но ошибка понятна', async () => {
+    setEnv({
+      MONGODB_URI: 'mongodb://localhost:27017', CLOUD_PROVIDER: 'mongo',
+      PUBLIC_BASE_URL: null, ADMIN_TOKEN: null, FILES_SECRET: null,
+    });
+
+    const tmp = path.join(os.tmpdir(), `mongo-nolink-${Date.now()}.txt`);
+    fs.writeFileSync(tmp, 'текст');
+
+    await withFakeDb(async (cloud) => {
+      try {
+        const result = await cloud.upload(tmp, 'заметка.txt');
+        assert.strictEqual(result.success, false);
+        assert.ok(/PUBLIC_BASE_URL/.test(result.error), result.error);
+        assert.ok(/ADMIN_TOKEN|FILES_SECRET/.test(result.error), result.error);
+      } finally {
+        fs.rmSync(tmp, { force: true });
+      }
+    });
+  });
+
+  await test('cloud readFile: чужой и неизвестный префиксы не проходят', async () => {
+    setEnv({ MONGODB_URI: 'mongodb://localhost:27017', CLOUD_PROVIDER: 'mongo' });
+
+    await withFakeDb(async (cloud) => {
+      assert.strictEqual(await cloud.readFile(''), null);
+      assert.strictEqual(await cloud.readFile(null), null);
+      assert.strictEqual(await cloud.readFile('mongo:несуществующий-id'), null);
+      // Ключ без префикса mongo трактуется как R2; R2 не настроен — отдаём null,
+      // а не бросаем: маршрут должен ответить 404, а не 500
+      assert.strictEqual(await cloud.readFile('ai-documents/whatever.txt'), null);
+    });
+  });
+
+  await test('cloud status: для mongo показывает объём занятого места', async () => {
+    setEnv({
+      MONGODB_URI: 'mongodb://localhost:27017', CLOUD_PROVIDER: 'mongo',
+      PUBLIC_BASE_URL: 'https://x.onrender.com', ADMIN_TOKEN: 's',
+    });
+
+    await withFakeDb(async (cloud) => {
+      const state = await cloud.status();
+      assert.strictEqual(state.configured, true);
+      assert.strictEqual(state.provider, 'mongo');
+      assert.ok(/через сервер/.test(state.delivery), state.delivery);
+      assert.strictEqual(typeof state.files, 'number');
+    });
+  });
+
+  /* ================================================================== */
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${'='.repeat(60)}`);

@@ -239,15 +239,17 @@ app.post('/api/runs/:taskId/reset', requireAdmin, resetRunHandler);
 /* ------------------------------------------------------------------ */
 
 /**
- * GET /files/<подпись>/<имя>?k=<ключ объекта>
+ * GET /files/<подпись>/<имя>?k=<ключ>
  *
- * Используется, когда R2_PUBLIC_BASE_URL не задан и бакет остаётся приватным.
- * Для бизнес-документов это предпочтительнее публичного бакета: файл доступен
- * только обладателю подписанной ссылки, а подпись (HMAC-SHA256 от ключа объекта)
- * нельзя подделать для другого файла без FILES_SECRET/ADMIN_TOKEN.
+ * Раздача документов из хранилища. Ключ несёт префикс провайдера:
+ *   mongo:<uuid> — файл лежит в MongoDB (CLOUD_PROVIDER=mongo, работает без
+ *                  внешних сервисов и платёжных карт);
+ *   остальное    — ключ объекта Cloudflare R2.
  *
- * Ссылки не имеют срока действия — важно, потому что они попадают
- * в комментарии задач YouGile, которые читают спустя недели.
+ * Подпись — HMAC-SHA256 от ключа на ADMIN_TOKEN/FILES_SECRET: зная подпись одной
+ * ссылки, нельзя получить другую, а перебрать ключи без секрета невозможно.
+ * Срок действия не ограничен — ссылки попадают в комментарии задач YouGile,
+ * которые читают спустя недели.
  */
 app.get('/files/:signature/:name', async (req, res) => {
   const key = String(req.query.k || '');
@@ -266,20 +268,26 @@ app.get('/files/:signature/:name', async (req, res) => {
   }
 
   try {
-    const object = await r2.getObject(key);
+    const file = await cloud.readFile(key);
 
-    if (!object) {
+    if (!file) {
       return res.status(404).type('text/plain; charset=utf-8').send('Файл не найден в хранилище');
     }
 
-    res.setHeader('Content-Type', object.contentType);
-    if (object.size) res.setHeader('Content-Length', String(object.size));
-    if (object.disposition) res.setHeader('Content-Disposition', object.disposition);
+    res.setHeader('Content-Type', file.contentType);
     res.setHeader('Cache-Control', 'private, max-age=3600');
 
-    // Поток из R2 (Readable из @aws-sdk) pipe'им в ответ
-    object.body.pipe(res);
-    object.body.on('error', (error) => {
+    // Файл из MongoDB — отдаём буфером; из R2 — потоком, не держа его в памяти
+    if (file.buffer) {
+      res.setHeader('Content-Length', String(file.buffer.length));
+      return res.send(file.buffer);
+    }
+
+    if (file.size) res.setHeader('Content-Length', String(file.size));
+    if (file.disposition) res.setHeader('Content-Disposition', file.disposition);
+
+    file.body.pipe(res);
+    file.body.on('error', (error) => {
       console.error(`❌ Раздача файла ${key}: ${error.message}`);
       if (!res.headersSent) res.status(502).end();
       else res.destroy();

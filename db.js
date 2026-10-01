@@ -24,6 +24,10 @@ const COLLECTIONS = {
   botAccess: 'bot_access',
   botRequests: 'bot_requests',
   agentRuns: 'agent_runs',
+  // Хранилище документов агента, когда внешнее облако недоступно.
+  // Файлы небольшие (КБ–сотни КБ), поэтому GridFS не нужен: обычного
+  // документа с Binary-полем хватает с запасом (лимит BSON — 16 МБ).
+  files: 'stored_files',
 };
 
 /** Сколько минут задача считается «ещё выполняется» после рестарта процесса. */
@@ -69,6 +73,7 @@ const INDEX_DEFINITIONS = [
   { collection: COLLECTIONS.botRequests, keys: { chatId: 1 }, name: 'uniq_chatId', options: { unique: true } },
   { collection: COLLECTIONS.agentRuns, keys: { startedAt: -1 }, name: 'startedAt_desc' },
   { collection: COLLECTIONS.agentRuns, keys: { taskId: 1, startedAt: -1 }, name: 'taskId_startedAt' },
+  { collection: COLLECTIONS.files, keys: { key: 1 }, name: 'uniq_key', options: { unique: true } },
 ];
 
 /**
@@ -404,6 +409,89 @@ async function recentAgentRuns(limit = 20) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Хранилище документов (когда внешнее облако недоступно)              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Сохранение файла в MongoDB.
+ * Используется провайдером cloud=mongo: документы агента лежат в той же базе,
+ * что и результаты задач, и раздаются через подписанные ссылки /files/<подпись>.
+ * Не требует ни внешних сервисов, ни платёжных карт.
+ *
+ * @param {object} file
+ * @param {string} file.key - уникальный ключ, например "mongo:<uuid>"
+ * @param {string} file.filename - исходное имя для скачивания
+ * @param {string} file.contentType
+ * @param {Buffer} file.data
+ * @param {object} [file.metadata]
+ */
+async function storeFile({ key, filename, contentType, data, metadata = {} }) {
+  const db = await getDb();
+  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+
+  await db.collection(COLLECTIONS.files).updateOne(
+    { key },
+    {
+      $set: {
+        key,
+        filename: String(filename || 'document'),
+        contentType: String(contentType || 'application/octet-stream'),
+        data: buffer,
+        size: buffer.length,
+        metadata,
+        uploadedAt: new Date(),
+      },
+    },
+    { upsert: true }
+  );
+
+  console.log(`💾 Файл ${filename} сохранён в MongoDB (${(buffer.length / 1024).toFixed(1)} КБ)`);
+  return key;
+}
+
+/**
+ * Чтение файла из MongoDB.
+ * @returns {Promise<{buffer: Buffer, contentType: string, filename: string, size: number}|null>}
+ */
+async function getFile(key) {
+  const db = await getDb();
+  const doc = await db.collection(COLLECTIONS.files).findOne({ key });
+  if (!doc) return null;
+
+  const raw = doc.data;
+  const buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw?.buffer ?? raw?.value?.(true) ?? raw);
+
+  return {
+    buffer,
+    contentType: doc.contentType || 'application/octet-stream',
+    filename: doc.filename || 'document',
+    size: doc.size ?? buffer.length,
+  };
+}
+
+async function countFiles() {
+  try {
+    const db = await getDb();
+    return db.collection(COLLECTIONS.files).estimatedDocumentCount();
+  } catch {
+    return null;
+  }
+}
+
+async function filesTotalBytes() {
+  try {
+    const db = await getDb();
+    const rows = await db
+      .collection(COLLECTIONS.files)
+      .aggregate([{ $group: { _id: null, total: { $sum: '$size' } } }])
+      .toArray();
+    return rows[0]?.total ?? 0;
+  } catch {
+    return null;
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* Статистика                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -539,6 +627,11 @@ module.exports = {
   logAgentRun,
   updateAgentRun,
   recentAgentRuns,
+
+  storeFile,
+  getFile,
+  countFiles,
+  filesTotalBytes,
 
   getStats,
 
