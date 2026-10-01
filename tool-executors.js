@@ -331,6 +331,70 @@ async function analyzeImage(url, question = '') {
 }
 
 /* ------------------------------------------------------------------ */
+// seo_audit
+/* ------------------------------------------------------------------ */
+
+const seoAuditor = require('./lib/seo-audit');
+
+/**
+ * Механический SEO-аудит.
+ * @param {string} [url] - одна страница (полный отчёт)
+ * @param {string[]} [urls] - список страниц (сжатая сводка по каждой)
+ * @param {boolean} [probeDomain]
+ */
+async function seoAudit(url, urls, probeDomain = true) {
+  const list = Array.isArray(urls) && urls.length > 0 ? urls : url ? [url] : [];
+
+  if (list.length === 0) {
+    return { success: false, error: 'Передай url (строку) или urls (массив) для аудита.' };
+  }
+
+  if (list.length === 1) {
+    console.log(`🔬 SEO-аудит: ${list[0]}`);
+    const report = await seoAuditor.auditPage(list[0], { probeDomain });
+    return report.success ? { success: true, ...report } : report;
+  }
+
+  console.log(`🔬 SEO-аудит ${list.length} страниц...`);
+  const reports = [];
+
+  for (const target of list.slice(0, 10)) {
+    const report = await seoAuditor.auditPage(target, { probeDomain });
+
+    if (!report.success) {
+      reports.push({ url: target, success: false, error: report.error });
+      continue;
+    }
+
+    reports.push({
+      url: target,
+      success: true,
+      score: report.score.total,
+      categories: Object.fromEntries(
+        Object.entries(report.score.byCategory).map(([name, row]) => [name, row.score])
+      ),
+      errors: report.errors,
+      warnings: report.warnings,
+      topFindings: report.findings.slice(0, 5).map((f) => ({
+        severity: f.severity,
+        check: f.check,
+        value: f.value,
+        recommendation: f.recommendation,
+      })),
+      facts: {
+        title: report.facts.title,
+        titleLength: report.facts.titleLength,
+        descriptionLength: report.facts.descriptionLength,
+        wordCount: report.facts.wordCount,
+        schemaTypes: report.facts.schemaTypes,
+      },
+    });
+  }
+
+  return { success: true, pageCount: reports.length, reports };
+}
+
+/* ------------------------------------------------------------------ */
 // create_document
 /* ------------------------------------------------------------------ */
 
@@ -574,6 +638,7 @@ module.exports = {
   webSearch,
   webAnalysis,
   analyzeImage,
+  seoAudit,
   createDocument,
   saveResult,
   updateTaskStatus,

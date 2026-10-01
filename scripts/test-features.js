@@ -857,6 +857,203 @@ async function main() {
   });
 
   /* ================================================================== */
+  console.log('\n— Механический SEO-аудит —');
+  /* ================================================================== */
+
+  const http = require('http');
+  const seoAuditor = require('../lib/seo-audit');
+
+  const BAD_PAGE = `<!DOCTYPE html>
+<html>
+<head>
+  <title>Очень длинный заголовок страницы, который непременно обрежется в поисковой выдаче и потеряет смысл</title>
+  <script type="application/ld+json">{ "broken json"</script>
+</head>
+<body>
+  <h1>Первый заголовок</h1>
+  <h1>Второй заголовок</h1>
+  <p>Короткий текст.</p>
+  <img src="/a.png">
+  <img src="/b.png">
+  <img src="/c.png" alt="описание">
+</body>
+</html>`;
+
+  const GOOD_PAGE = `<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SEO-продвижение сайта в Москве — цена и сроки</title>
+  <meta name="description" content="Продвигаем сайты бизнеса в Москве и области. Прозрачная отчётность, договор с KPI, первые результаты за три месяца работы.">
+  <link rel="canonical" href="SELF">
+  <meta property="og:title" content="SEO-продвижение сайта в Москве">
+  <meta property="og:image" content="/og.png">
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@graph":[
+    {"@type":"LocalBusiness","name":"RocketUP","telephone":"+7 000 000-00-00"},
+    {"@type":"Service","name":"SEO-продвижение"}
+  ]}
+  </script>
+</head>
+<body>
+  <nav><a href="/uslugi/">Услуги</a></nav>
+  <h1>SEO-продвижение сайта в Москве</h1>
+  <h2>Сколько стоит продвижение</h2>
+  <p>${'осмысленный текст '.repeat(120)}</p>
+  <h2>Частые вопросы</h2>
+  <p>Сколько стоит продвижение сайта? От 60 000 рублей в месяц.</p>
+  <a href="/audit/">Заказать аудит</a>
+  <a href="/cases/">Кейсы</a>
+  <a href="/prices/">Цены</a>
+  <img src="/team.jpg" alt="Команда за работой">
+</body>
+</html>`;
+
+  function startSite(pages) {
+    return new Promise((resolve) => {
+      const server = http.createServer((req, res) => {
+        const path = req.url.split('?')[0];
+        if (pages[path]) {
+          let html = pages[path];
+          html = html.replace('SELF', `http://localhost:${server.address().port}${path}`);
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          return res.end(html);
+        }
+        if (path === '/robots.txt') { res.statusCode = 200; return res.end('User-agent: *\nAllow: /'); }
+        if (path === '/sitemap.xml') { res.statusCode = 200; return res.end('<?xml version="1.0"?><urlset></urlset>'); }
+        if (path === '/llms.txt' && pages.__llms) { res.statusCode = 200; return res.end('# Site\n> about'); }
+        res.statusCode = 404;
+        res.end('not found');
+      });
+      server.listen(0, '127.0.0.1', () => resolve({
+        url: (path) => `http://127.0.0.1:${server.address().port}${path}`,
+        close: () => new Promise((done) => server.close(done)),
+      }));
+    });
+  }
+
+  await test('auditPage: находит типовые проблемы больной страницы', async () => {
+    const site = await startSite({ '/bad/': BAD_PAGE });
+    try {
+      const report = await seoAuditor.auditPage(site.url('/bad/'));
+
+      assert.strictEqual(report.success, true, report.error);
+      const checks = report.findings.map((f) => f.check);
+
+      assert.ok(checks.includes('title-long'), `длинный title не найден: ${checks.join(',')}`);
+      assert.ok(checks.includes('description-missing'), 'нет нахождения об отсутствии description');
+      assert.ok(checks.includes('h1-multiple'), 'два H1 не замечены');
+      assert.ok(checks.includes('canonical'), 'отсутствие canonical не замечено');
+      assert.ok(checks.includes('viewport-missing'), 'отсутствие viewport не замечено');
+      assert.ok(checks.includes('jsonld-broken'), 'битый JSON-LD не замечен');
+      assert.ok(checks.includes('images-alt'), 'картинки без alt не замечены');
+      assert.ok(checks.includes('thin-content'), 'тонкий контент не замечен');
+
+      // Приоритизация: ошибки идут раньше предупреждений
+      assert.strictEqual(report.findings[0].severity, 'error', 'findings не отсортированы по серьёзности');
+      // Реальные error на этой странице: нет viewport и битый JSON-LD.
+      // Проверка https на loopback-хостах не срабатывает намеренно.
+      const errorChecks = report.findings.filter((f) => f.severity === 'error').map((f) => f.check);
+      assert.ok(errorChecks.includes('viewport-missing'), `нет viewport-missing: ${errorChecks}`);
+      assert.ok(errorChecks.includes('jsonld-broken'), `нет jsonld-broken: ${errorChecks}`);
+      assert.ok(!errorChecks.includes('https'), 'https не должен флагаться на локальном хосте');
+      assert.ok(report.score.total < 60, `больная страница получила ${report.score.total}/100 — слишком щедро`);
+      assert.ok(report.facts.images.withAlt === 1 && report.facts.images.total === 3);
+    } finally {
+      await site.close();
+    }
+  });
+
+  await test('auditPage: здоровая страница получает высокий балл без ошибок', async () => {
+    const site = await startSite({ '/good/': GOOD_PAGE, __llms: true });
+    try {
+      const report = await seoAuditor.auditPage(site.url('/good/'));
+
+      assert.strictEqual(report.success, true, report.error);
+      assert.strictEqual(report.errors, 0, `ошибки на здоровой странице: ${JSON.stringify(report.findings.filter(f => f.severity === 'error'))}`);
+      assert.ok(report.score.total >= 80, `здоровая страница получила ${report.score.total}/100`);
+
+      // Факты сняты верно
+      assert.strictEqual(report.facts.headings.h1, 1);
+      assert.ok(report.facts.schemaTypes.includes('LocalBusiness'), `schema: ${report.facts.schemaTypes}`);
+      assert.ok(report.facts.schemaTypes.includes('Service'), 'тип Service из @graph не распознан');
+      assert.strictEqual(report.facts.schemaBroken, false);
+      assert.ok(report.facts.wordCount > 200, report.facts.wordCount);
+      assert.ok(report.facts.links.internal >= 3);
+      assert.ok(report.facts.domainFiles['llms.txt'].ok, 'llms.txt не найден');
+      assert.ok(report.facts.domainFiles['sitemap.xml'].ok, 'sitemap не найден');
+
+      // Веса категорий в сумме дают 100
+      const weights = Object.values(report.weights).reduce((a, b) => a + b, 0);
+      assert.strictEqual(weights, 100, `сумма весов ${weights}`);
+      const maxScore = Object.values(report.score.byCategory).reduce((a, r) => a + r.weight, 0);
+      assert.strictEqual(maxScore, 100);
+    } finally {
+      await site.close();
+    }
+  });
+
+  await test('parseHead/schemaTypes: @graph, массив @type и битый JSON', () => {
+    const types = seoAuditor.schemaTypes([
+      { '@graph': [{ '@type': 'Organization' }, { '@type': ['Article', 'NewsArticle'] }] },
+      { __broken: true },
+    ]);
+    assert.deepStrictEqual(types.sort(), ['Article', 'NewsArticle', 'Organization']);
+  });
+
+  await test('seoAudit: список страниц даёт сжатую сводку, а не полные отчёты', async () => {
+    const site = await startSite({ '/a/': GOOD_PAGE, '/b/': BAD_PAGE, __llms: true });
+    try {
+      const executors = require('../tool-executors');
+      const result = await executors.seoAudit(null, [site.url('/a/'), site.url('/b/')], false);
+
+      assert.strictEqual(result.success, true);
+      assert.strictEqual(result.pageCount, 2);
+      assert.ok(result.reports[0].score > result.reports[1].score, 'здоровая страница должна обгонять больную');
+      assert.ok(Array.isArray(result.reports[1].topFindings));
+      assert.ok(result.reports[1].topFindings.length <= 5, 'сводка не сжата');
+      assert.ok(!('findings' in result.reports[0]), 'в сводке не должно быть полного списка findings');
+    } finally {
+      await site.close();
+    }
+  });
+
+  await test('seoAudit: валидация аргументов и недоступная страница', async () => {
+    const executors = require('../tool-executors');
+
+    const noArgs = await executors.seoAudit();
+    assert.strictEqual(noArgs.success, false);
+    assert.ok(/url/i.test(noArgs.error));
+
+    const dead = await executors.seoAudit('http://127.0.0.1:1/nope');
+    assert.strictEqual(dead.success, false);
+    assert.ok(/недоступна|Сервер вернул/.test(dead.error), dead.error);
+  });
+
+  await test('seo_audit объявлен в tools и реализован в агенте', () => {
+    const names = tools.map((t) => t.function.name);
+    assert.ok(names.includes('seo_audit'));
+    const { TOOL_HANDLERS } = require('../ai-agent');
+    assert.strictEqual(typeof TOOL_HANDLERS.seo_audit, 'function');
+  });
+
+  await test('SEO-промпты построены на чек-листах и запрещают выдумывать факты', () => {
+    const seo = require('../prompts/seo');
+    const checklists = require('../prompts/checklists');
+
+    for (const key of ['seoAudit', 'competitorAnalysis', 'keywords']) {
+      assert.ok(seo[key] && seo[key].length > 500, `промпт ${key} пустой`);
+      assert.ok(/create_document/.test(seo[key]), `${key} не требует создать документ`);
+    }
+
+    assert.ok(seo.seoAudit.includes('seo_audit'), 'промпт аудита не вызывает механический инструмент');
+    assert.ok(seo.seoAudit.includes(checklists.SCORING.slice(0, 40)), 'веса категорий не вшиты в промпт');
+    assert.ok(/НЕ придумывай|не придумывай/i.test(seo.seoAudit), 'нет запрета выдумывать факты');
+    assert.ok(/Google Drive/.test(seo.seoAudit) === false, 'промпт всё ещё ссылается на удалённый Google Drive');
+  });
+
+  /* ================================================================== */
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${'='.repeat(60)}`);

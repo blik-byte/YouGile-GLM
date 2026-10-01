@@ -82,6 +82,34 @@ const tools = [
   {
     type: 'function',
     function: {
+      name: 'seo_audit',
+      description:
+        'Механический SEO-аудит страницы: title/description и их длины, canonical, robots, ' +
+        'заголовки H1-H6, разметка schema.org, alt у изображений, перелинковка, вес страницы, ' +
+        'наличие robots.txt, sitemap.xml и llms.txt. Возвращает оценку 0-100 по категориям ' +
+        'и список находок с приоритетами. Факты снимаются кодом, а не «на глаз», поэтому им можно доверять. ' +
+        'Для смысловой оценки текста после этого используй web_analysis.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'Адрес одной страницы для аудита' },
+          urls: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Или список страниц: вернётся сжатая сводка по каждой (оценка и главные находки)',
+          },
+          probeDomain: {
+            type: 'boolean',
+            description: 'Проверять robots.txt, sitemap.xml и llms.txt домена (по умолчанию true)',
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'create_document',
       description:
         'Создать документ и загрузить его в облачное хранилище pCloud. Возвращает публичную ссылку, которую обязательно нужно добавить в комментарий к задаче. Для таблиц используй xlsx или csv, для текстовых отчётов — docx или md.',
