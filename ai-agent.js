@@ -64,7 +64,10 @@ ID задачи в YouGile: ${taskId}
 - Семантика ВСЕГДА проходит согласование владельца: собрал черновик через
   semantics_draft — остановился и сообщил в комментарии, что черновик ждёт одобрения.
 - Создавать или изменять страницы разрешено ТОЛЬКО по черновику со статусом approved
-  (проверяй через semantics_status). По pending и denied работа запрещена.
+  (проверяй через semantics_status) и ТОЛЬКО инструментом site_page_create, который
+  сам проверяет гейт и берёт запросы из черновика. По pending и denied работа запрещена.
+- После создания страницы обязательно сообщи владельцу ссылку на карточку в админке
+  (managerUrl) и список warnings, если они есть.
 - Частотности владельца не пересчитывай и не заменяй; кандидатам из подсказок
   частотности не выдумывай — их проставляет владелец своим расширением.
 
@@ -190,6 +193,7 @@ const TOOL_HANDLERS = {
   keyword_research: (args) => executors.keywordResearch(args.seed, args),
   semantics_draft: (args, ctx) => executors.semanticsDraft({ ...args, taskId: args.taskId || ctx.taskId }),
   semantics_status: (args) => executors.semanticsStatus(args.draftId),
+  site_page_create: (args) => executors.sitePageCreate(args),
   save_result: (args, ctx) => executors.saveResult(args.taskId || ctx.taskId, args.step, args.data),
   update_task_status: (args, ctx) => executors.updateTaskStatus(args.taskId || ctx.taskId, args.status),
   add_comment: (args, ctx) => executors.addComment(args.taskId || ctx.taskId, args.text),

@@ -1249,7 +1249,7 @@ async function main() {
       },
     };
     for (const key of Object.keys(require.cache)) {
-      if (/lib[\\/](semantics|approvals|tool-executors)\.js$/.test(key)) delete require.cache[key];
+      if (/(lib[\\/])?(semantics|approvals)\.js$/.test(key) || /(^|[\\/])tool-executors\.js$/.test(key)) delete require.cache[key];
     }
 
     try {
@@ -1258,7 +1258,7 @@ async function main() {
       if (originalDb) require.cache[dbPath] = originalDb; else delete require.cache[dbPath];
       if (originalKw) require.cache[kwPath] = originalKw; else delete require.cache[kwPath];
       for (const key of Object.keys(require.cache)) {
-        if (/lib[\\/](semantics|approvals|tool-executors)\.js$/.test(key)) delete require.cache[key];
+        if (/(lib[\\/])?(semantics|approvals)\.js$/.test(key) || /(^|[\\/])tool-executors\.js$/.test(key)) delete require.cache[key];
       }
     }
   }
@@ -1390,6 +1390,145 @@ async function main() {
     assert.ok(/СОГЛАСОВАНИЕ/i.test(prompt) || /согласование/i.test(prompt));
     assert.ok(/approved/.test(prompt), 'нет требования статуса approved');
     assert.ok(/Частотности владельца не пересчитывай/i.test(prompt), 'нет защиты частотностей владельца');
+  });
+
+  /* ================================================================== */
+  console.log('\n— Генератор страниц и гейт одобренной семантики —');
+  /* ================================================================== */
+
+  const pageBuilder = require('../lib/page-builder');
+
+  await test('fitToLimit: режет по границе слова и не превышает лимит', () => {
+    assert.strictEqual(pageBuilder.fitToLimit('короткий', 60).trimmed, false);
+
+    const long = 'Продвижение сайта на wordpress с гарантией результата и прозрачной отчётностью каждый месяц';
+    const fitted = pageBuilder.fitToLimit(long, 60);
+    assert.strictEqual(fitted.trimmed, true);
+    assert.ok(fitted.value.length <= 60, `длина ${fitted.value.length}`);
+    assert.ok(fitted.value.endsWith('…'), 'нет отметки об усечении');
+    assert.ok(!fitted.value.slice(0, -1).endsWith(' '), 'обрыв на пробеле');
+  });
+
+  await test('markdownToHtml: H1 модели становится H2, списки и абзацы корректны', () => {
+    const html = pageBuilder.markdownToHtml(
+      '# Главный заголовок\n\nАбзац первый.\nПродолжение абзаца.\n\n## Раздел\n\n- пункт один\n- пункт два\n\nИтоговый абзац.'
+    );
+
+    assert.ok(!/<h1>/.test(html), 'H1 зарезервирован за страницей, модель не должна его ставить');
+    assert.ok(html.includes('<h2>Главный заголовок</h2>'), 'модельный H1 не понижен до H2');
+    assert.ok(html.includes('<h3>Раздел</h3>'), 'модельный H2 не понижен до H3');
+    assert.ok(html.includes('<ul>'), 'нет списка');
+    assert.ok(html.includes('<li>пункт один</li>'));
+    assert.ok(html.includes('<p>Абзац первый. Продолжение абзаца.</p>'), 'строки абзаца не склеены');
+    assert.ok(html.includes('<p>Итоговый абзац.</p>'));
+  });
+
+  await test('buildAlias: транслитерация и ограничение длины', () => {
+    assert.strictEqual(pageBuilder.buildAlias('Продвижение сайта на WordPress', ''), 'prodvizhenie-sayta-na-wordpress');
+    assert.ok(pageBuilder.buildAlias('ы'.repeat(200), '').length <= 70);
+    assert.strictEqual(pageBuilder.buildAlias('', ''), 'page');
+  });
+
+  await test('buildPageSpec: код дожимает метатеги модели до лимитов и собирает FAQ', async () => {
+    const glmPath = require.resolve('../lib/glm-client');
+    const original = require.cache[glmPath];
+    require.cache[glmPath] = {
+      id: glmPath, filename: glmPath, loaded: true,
+      exports: {
+        chatJson: async () => ({
+          pagetitle: 'Очень длинный title про продвижение сайта на вордпресс, который совершенно точно не влезет в шестьдесят символов выдачи',
+          description: 'Д'.repeat(240),
+          longtitle: 'Развёрнутый заголовок страницы про продвижение',
+          introtext: 'Анонс страницы',
+          content_markdown: '## Состав работ\n\n- аудит\n- семантика\n\nАбзац с конкретикой.',
+          faq: [{ q: 'Сколько стоит продвижение wordpress?', a: 'От 60 000 рублей в месяц.' }],
+          schema_hint: 'Service, FAQPage',
+        }),
+        chatCompletion: async () => ({ message: { content: '{}' } }),
+      },
+    };
+    delete require.cache[require.resolve('../lib/page-builder')];
+
+    try {
+      const freshBuilder = require('../lib/page-builder');
+      const spec = await freshBuilder.buildPageSpec({ cluster: 'продвижение сайта на wordpress', kind: 'promo' });
+
+      assert.strictEqual(spec.success, true, spec.error);
+      assert.ok(spec.pagetitle.length <= 60, `title ${spec.pagetitle.length}`);
+      assert.ok(spec.description.length <= 160, `description ${spec.description.length}`);
+      assert.ok(spec.warnings.some((w) => /title укорочен/.test(w)), 'нет предупреждения об усечении title');
+      assert.ok(spec.content.includes('Частые вопросы'), 'FAQ-блок не вшит в тело');
+      assert.ok(spec.content.includes('Сколько стоит продвижение wordpress?'), 'вопрос FAQ потерян');
+      assert.ok(spec.content.includes('<h2>'), 'нет H2 в теле');
+      assert.strictEqual(spec.published, 0, 'страница не должна создаваться опубликованной');
+      assert.strictEqual(spec.template, 4, 'promo должен идти в шаблон «SEO продвижение»');
+      assert.ok(/prodvizhenie/.test(spec.alias), `alias: ${spec.alias}`);
+    } finally {
+      if (original) require.cache[glmPath] = original;
+      else delete require.cache[glmPath];
+      delete require.cache[require.resolve('../lib/page-builder')];
+    }
+  });
+
+  await test('site_page_create: гейт отсекает pending, чужой кластер и пропускает approved', async () => {
+    await withSemanticsStubs(async () => {
+      // Модель подменяем: тест проверяет гейт и маршрутизацию, а не генерацию текста
+      const glmPath = require.resolve('../lib/glm-client');
+      const originalGlm = require.cache[glmPath];
+      require.cache[glmPath] = {
+        id: glmPath, filename: glmPath, loaded: true,
+        exports: {
+          chatJson: async () => ({
+            pagetitle: 'Продвижение сайта на wordpress',
+            description: 'Описание страницы продвижения.',
+            content_markdown: '## Состав работ\n\n- аудит\n',
+            faq: [{ q: 'Сколько стоит?', a: 'От 60 000 ₽.' }],
+          }),
+          chatCompletion: async () => ({ message: { content: '{}' } }),
+        },
+      };
+      for (const key of Object.keys(require.cache)) {
+        if (/(lib[\\/])?page-builder\.js$/.test(key) || /(^|[\\/])tool-executors\.js$/.test(key)) delete require.cache[key];
+      }
+
+      const executors = require('../tool-executors');
+
+      const draft = await require('../lib/semantics').buildDraft({ groups: 'seo-wordpress' });
+      const cluster = draft.groups[0].queries[0].q;
+
+      // 1. pending — отказ до всякого обращения к MODX
+      const gated = await executors.sitePageCreate({ draftId: draft.id, cluster });
+      assert.strictEqual(gated.success, false);
+      assert.strictEqual(gated.gated, true, 'гейт не пометил отказ');
+      assert.ok(/не одобрена/i.test(gated.error), gated.error);
+
+      // 2. approved, но кластер вне черновика — отказ
+      const approvals = require('../lib/approvals');
+      await approvals.decide(draft.approvalId, 'approved', 'owner');
+
+      const foreign = await executors.sitePageCreate({ draftId: draft.id, cluster: 'казино вулкан купить' });
+      assert.strictEqual(foreign.success, false);
+      assert.ok(/нет в одобренном черновике/i.test(foreign.error), foreign.error);
+
+      // 3. approved + кластер из черновика: гейт пройден, упираемся в ненастроенный MODX
+      const passed = await executors.sitePageCreate({ draftId: draft.id, cluster });
+      assert.notStrictEqual(passed.gated, true, 'гейт не должен мешать одобренному черновику');
+      assert.strictEqual(passed.success, false, 'без настроенного MODX создание невозможно');
+      assert.ok(/MODX_PUBLISHER_URL/i.test(passed.error), passed.error);
+
+      if (originalGlm) require.cache[glmPath] = originalGlm;
+      else delete require.cache[glmPath];
+      for (const key of Object.keys(require.cache)) {
+        if (/(lib[\\/])?page-builder\.js$/.test(key) || /(^|[\\/])tool-executors\.js$/.test(key)) delete require.cache[key];
+      }
+    });
+  });
+
+  await test('site_page_create объявлен и требует draftId и cluster', () => {
+    const tool = tools.find((t) => t.function.name === 'site_page_create');
+    assert.ok(tool, 'инструмент не объявлен');
+    assert.deepStrictEqual(tool.function.parameters.required, ['draftId', 'cluster']);
+    assert.ok(tool.function.description.includes('published=0'), 'в описании нет гарантии черновика');
   });
 
   /* ================================================================== */

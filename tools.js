@@ -106,6 +106,32 @@ const tools = [
   {
     type: 'function',
     function: {
+      name: 'site_page_create',
+      description:
+        'Создать страницу сайта в MODX по ОДОБРЕННОМУ черновику семантики (черновиком, published=0). ' +
+        'Требует draftId со статусом approved и cluster — опорный запрос из этого черновика; ' +
+        'запросы вне черновика отклоняются. Текст, title, description и FAQ генерируются по ' +
+        'SEO-чек-листам, длины контролируются кодом. Возвращает ID ресурса и ссылку на карточку ' +
+        'в админке MODX для проверки человеком.',
+      parameters: {
+        type: 'object',
+        properties: {
+          draftId: { type: 'string', description: 'ID одобренного черновика семантики' },
+          cluster: { type: 'string', description: 'Опорный запрос кластера из черновика' },
+          kind: {
+            type: 'string',
+            enum: ['promo', 'article'],
+            description: 'promo — страница продвижения (шаблон «SEO продвижение»), article — статья в блог',
+          },
+          notes: { type: 'string', description: 'Дополнительные факты для текста: цены, сроки, условия' },
+        },
+        required: ['draftId', 'cluster'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'semantics_status',
       description:
         'Статус черновиков семантики: pending (ждёт владельца), approved (одобрен, можно делать страницы), ' +

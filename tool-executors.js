@@ -390,6 +390,91 @@ async function semanticsStatus(draftId) {
 }
 
 /* ------------------------------------------------------------------ */
+// site_page_create
+/* ------------------------------------------------------------------ */
+
+const pageBuilder = require('./lib/page-builder');
+const modx = require('./lib/modx-client');
+
+/**
+ * Создание страницы сайта ПО ОДОБРЕННОМУ черновику семантики.
+ *
+ * Гейт: без черновика в статусе approved действие отклоняется ещё до обращения
+ * к MODX. Созданная страница всегда черновик (published=0) — публикация
+ * остаётся решением человека.
+ *
+ * @param {object} params
+ * @param {string} params.draftId - одобренный черновик семантики
+ * @param {string} params.cluster - опорный запрос кластера из черновика
+ * @param {'article'|'promo'} [params.kind]
+ */
+async function sitePageCreate({ draftId, cluster, kind = 'promo', notes = '' } = {}) {
+  const gate = await semantics.assertApproved(toStr(draftId).trim());
+  if (!gate.ok) {
+    return { success: false, gated: true, error: gate.error };
+  }
+
+  const normalizedCluster = toStr(cluster).trim().toLowerCase();
+  if (!normalizedCluster) {
+    return { success: false, error: 'Не задан cluster — опорный запрос страницы из черновика' };
+  }
+
+  // Ищем кластер в одобренном черновике: страница вне черновика запрещена процессом
+  let matchedGroup = null;
+  let matchedQuery = null;
+
+  for (const group of gate.draft.groups || []) {
+    const hit = (group.queries || []).find((query) => query.q === normalizedCluster);
+    if (hit) {
+      matchedGroup = group;
+      matchedQuery = hit;
+      break;
+    }
+  }
+
+  if (!matchedQuery) {
+    return {
+      success: false,
+      error:
+        `Запроса «${cluster}» нет в одобренном черновике ${draftId}. ` +
+        'Страницы вне согласованной семантики не создаются: добавь запрос в новый черновик.',
+    };
+  }
+
+  const related = (matchedGroup.queries || [])
+    .filter((query) => query.q !== normalizedCluster)
+    .slice(0, 12)
+    .map((query) => query.q);
+
+  const spec = await pageBuilder.buildPageSpec({
+    cluster: normalizedCluster,
+    related,
+    kind,
+    context: { notes: toStr(notes), groupTitle: matchedGroup.title },
+  });
+
+  if (!spec.success) return spec;
+
+  const created = await modx.createPage(spec);
+  if (!created.success) return created;
+
+  return {
+    success: true,
+    resourceId: created.id,
+    alias: created.alias || spec.alias,
+    url: created.url || null,
+    managerUrl: created.managerUrl || null,
+    pagetitle: spec.pagetitle,
+    description: spec.description,
+    template: spec.template,
+    parent: spec.parent,
+    published: false,
+    warnings: created.warnings || [],
+    frequencyOwner: matchedQuery.freq,
+  };
+}
+
+/* ------------------------------------------------------------------ */
 // keyword_research
 /* ------------------------------------------------------------------ */
 
@@ -723,6 +808,7 @@ module.exports = {
   keywordResearch,
   semanticsDraft,
   semanticsStatus,
+  sitePageCreate,
   createDocument,
   saveResult,
   updateTaskStatus,
