@@ -1358,6 +1358,23 @@ async function main() {
     });
   });
 
+  await test('исключённые владельцем группы не попадают в работу и объяснимо отказывают', () => {
+    const semantics = require('../lib/semantics');
+    const catalog = semantics.loadCatalog();
+
+    const excluded = semantics.excludedGroups(catalog);
+    assert.ok(excluded.has('seo-modx'), 'seo-modx должна быть в списке исключённых');
+
+    // Без явного выбора исключённая группа не появляется
+    const all = semantics.findGroups(catalog);
+    assert.ok(!all.some((group) => group.id === 'seo-modx'), 'исключённая группа попала в общий список');
+
+    // Явный запрос исключённой группы распознаётся для объяснимого отказа
+    const match = semantics.findExcludedMatch(catalog, 'seo-modx');
+    assert.ok(match, 'не распознан явный запрос исключённой группы');
+    assert.ok(/владел/i.test(match.reason), 'в причине нет ссылки на решение владельца');
+  });
+
   await test('semantics_draft и semantics_status объявлены и реализованы', () => {
     const names = tools.map((t) => t.function.name);
     assert.ok(names.includes('semantics_draft'));
