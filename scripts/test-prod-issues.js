@@ -11,6 +11,7 @@ require('dotenv').config({ quiet: true });
 const assert = require('assert');
 const fs = require('fs');
 const http = require('http');
+const path = require('path');
 
 const results = [];
 
@@ -394,6 +395,158 @@ async function main() {
     const indexSource = fs.readFileSync(require.resolve('../index.js'), 'utf8');
     assert.ok(/uncaughtException/.test(indexSource));
     assert.ok(/unhandledRejection/.test(indexSource));
+  });
+
+  /* ================================================================== */
+  console.log('\n— 5. Политика согласования правок существующего контента —');
+  /* ================================================================== */
+
+  await test('modx-client: без настроек не пытается ходить в сеть', async () => {
+    for (const key of ['MODX_PUBLISHER_URL', 'MODX_PUBLISHER_TOKEN']) delete process.env[key];
+    for (const key of Object.keys(require.cache)) {
+      if (/lib[\\/](config|modx-client)\.js$/.test(key)) delete require.cache[key];
+    }
+    const modx = require('../lib/modx-client');
+
+    assert.strictEqual(modx.isConfigured(), false);
+    const pingResult = await modx.ping();
+    assert.strictEqual(pingResult.success, false);
+    assert.ok(/MODX_PUBLISHER_URL/.test(pingResult.error));
+  });
+
+  await test('modx-client: 412 анти-бота Хостии распознаётся как отдельный диагноз', () => {
+    const modx = require('../lib/modx-client');
+    const hint = modx.diagnose(412, "<html><script src='//x/hostia-antibot.js'></script>");
+    assert.ok(hint, 'нет подсказки для 412');
+    assert.ok(/Хостия|анти-бот/i.test(hint), hint);
+    assert.ok(/панели хостинга|исключение/i.test(hint), 'в подсказке нет способа починить');
+
+    assert.ok(/ai_publisher_token/.test(modx.diagnose(401, '')), 'нет подсказки про токен');
+    assert.ok(/create_only/.test(modx.diagnose(403, '')), 'нет подсказки про политику');
+  });
+
+  await test('modx-client: защищённое действие без заявки НЕ уходит в сеть и создаёт заявку', async () => {
+    process.env.MODX_PUBLISHER_URL = 'http://127.0.0.1:9/modx.php';
+    process.env.MODX_PUBLISHER_TOKEN = 'token';
+    process.env.MONGODB_URI = 'mongodb://localhost:27017';
+    for (const key of Object.keys(require.cache)) {
+      if (/lib[\\/](config|modx-client|approvals)|^.*db\.js$/.test(key)) delete require.cache[key];
+    }
+
+    // Подменяем db и approvals-уведомления, чтобы не трогать Mongo и Telegram
+    const dbPath = require.resolve('../db');
+    const inserted = [];
+    const originalDb = require.cache[dbPath];
+    require.cache[dbPath] = {
+      id: dbPath, filename: dbPath, loaded: true,
+      exports: {
+        getDb: async () => ({
+          collection: () => ({
+            insertOne: async (doc) => { inserted.push(doc); return { insertedId: 1 }; },
+            findOne: async () => null,
+            findOneAndUpdate: async () => null,
+            find: () => ({ sort: () => ({ limit: () => ({ toArray: async () => [] }) }) }),
+            updateOne: async () => {},
+          }),
+        }),
+        COLLECTIONS: {},
+      },
+    };
+
+    // getResource должен сказать, что ресурс НЕ создан агентом,
+    // а сеть при этом не вызывается: URL несуществующий, и любой fetch упал бы
+    const modxPath = require.resolve('../lib/modx-client');
+    delete require.cache[modxPath];
+    const modx = require(modxPath);
+    const originalGet = modx.getResource;
+    modx.getResource = async () => ({ success: true, resource: { id: 42, agentOwned: false } });
+
+    try {
+      const result = await modx.mutateExisting('update', {
+        id: 42,
+        payload: { pagetitle: 'взлом' },
+        reason: 'проверка политики',
+        taskId: 'task-1',
+      });
+
+      assert.strictEqual(result.success, false, 'защищённое действие не должно выполняться');
+      assert.strictEqual(result.pending, true, 'должен вернуться статус ожидания согласования');
+      assert.ok(result.requestId, 'нет id заявки');
+      assert.ok(/согласование/i.test(result.error), result.error);
+      assert.strictEqual(inserted.length, 1, 'заявка не сохранена');
+      assert.strictEqual(inserted[0].kind, 'modx_update');
+      assert.strictEqual(inserted[0].target, '42');
+      assert.strictEqual(inserted[0].status, 'pending');
+    } finally {
+      modx.getResource = originalGet;
+      if (originalDb) require.cache[dbPath] = originalDb;
+      else delete require.cache[dbPath];
+      for (const key of ['MODX_PUBLISHER_URL', 'MODX_PUBLISHER_TOKEN']) delete process.env[key];
+      for (const key of Object.keys(require.cache)) {
+        if (/lib[\\/](config|modx-client)\.js$/.test(key)) delete require.cache[key];
+      }
+    }
+  });
+
+  await test('modx-client: свой черновик агент доводит без согласования', async () => {
+    // Мок-коннектор: на action=resource отвечает agentOwned=true,
+    // на action=update — успехом. Считаем обращения, чтобы доказать:
+    // запрос ушёл НАПРЯМУЮ, без создания заявки.
+    const hits = [];
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url, 'http://localhost');
+      hits.push(url.searchParams.get('action'));
+      res.setHeader('Content-Type', 'application/json');
+
+      if (url.searchParams.get('action') === 'resource') {
+        return res.end(JSON.stringify({ success: true, resource: { id: 7, agentOwned: true } }));
+      }
+      return res.end(JSON.stringify({ success: true, id: 7, url: 'https://example/7' }));
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+    process.env.MODX_PUBLISHER_URL = `http://127.0.0.1:${server.address().port}/modx.php`;
+    process.env.MODX_PUBLISHER_TOKEN = 'token';
+    for (const key of Object.keys(require.cache)) {
+      if (/lib[\\/](config|modx-client)\.js$/.test(key)) delete require.cache[key];
+    }
+    const modx = require('../lib/modx-client');
+
+    try {
+      const result = await modx.mutateExisting('update', { id: 7, payload: { pagetitle: 'x' }, reason: 'свой черновик' });
+
+      assert.strictEqual(result.success, true, `свой черновик должен обновляться сразу: ${result.error}`);
+      assert.notStrictEqual(result.pending, true, 'заявка для своего черновика не нужна');
+      assert.deepStrictEqual(hits, ['resource', 'update'], `обращения: ${hits.join(',')}`);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      for (const key of ['MODX_PUBLISHER_URL', 'MODX_PUBLISHER_TOKEN']) delete process.env[key];
+      for (const key of Object.keys(require.cache)) {
+        if (/lib[\\/](config|modx-client)\.js$/.test(key)) delete require.cache[key];
+      }
+    }
+  });
+
+  await test('createDraft принудительно делает черновик неопубликованным', async () => {
+    const modx = require('../lib/modx-client');
+    const result = await modx.createDraft({ pagetitle: '' });
+    assert.strictEqual(result.success, false, 'пустой pagetitle должен отклоняться до сети');
+  });
+
+  await test('conneктор: в коде нет действия удаления', () => {
+    const php = fs.readFileSync(path.join(__dirname, '..', 'modx', 'ai-publisher.connector.php'), 'utf8');
+    assert.ok(!/\$action === 'delete'|action=delete/i.test(php), 'в коннекторе появилось действие delete');
+    assert.ok(/create_only/.test(php), 'нет режима create_only');
+    assert.ok(/guardExisting/.test(php), 'нет серверной проверки владения');
+    assert.ok(/ai_publisher_mode/.test(php), 'режим не настраивается');
+  });
+
+  await test('системный промпт запрещает правки чужого контента', () => {
+    const { buildSystemPrompt } = require('../ai-agent');
+    const prompt = buildSystemPrompt('t', 'задача', 'описание', '');
+    assert.ok(/ЗАПРЕЩЕНО/.test(prompt), 'в промпте нет прямого запрета');
+    assert.ok(/согласование/i.test(prompt), 'нет отсылки к механизму согласования');
+    assert.ok(/обойти согласование/.test(prompt), 'нет запрета на обход механизма');
   });
 
   /* ================================================================== */

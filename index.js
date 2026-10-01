@@ -29,6 +29,7 @@ const cors = require('cors');
 const { config, validate } = require('./lib/config');
 const dashboard = require('./lib/dashboard');
 const cloud = require('./lib/cloud');
+const modx = require('./lib/modx-client');
 const r2 = require('./r2-client');
 const db = require('./db');
 const yougile = require('./lib/yougile-client');
@@ -94,6 +95,27 @@ app.get('/health', (req, res) => {
     node: process.version,
     timestamp: new Date().toISOString(),
   });
+});
+
+// Состояние интеграции с MODX: доступен ли коннектор и в каком он режиме
+app.get('/api/modx/status', requireAdmin, async (req, res) => {
+  try {
+    res.json(await modx.status());
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Заявки на согласование: очередь и история
+app.get('/api/approvals', requireAdmin, async (req, res) => {
+  try {
+    const approvals = require('./lib/approvals');
+    const pending = await approvals.listPending(50);
+    const recent = await approvals.listRecent(50);
+    res.json({ success: true, pending, recent });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // Полный снимок состояния системы для дашборда
@@ -513,6 +535,26 @@ async function start() {
 
   // Проверяем облачное хранилище и пишем в лог понятный диагноз
   await cloud.selfTest().catch((error) => console.error(`❌ Проверка облака: ${error.message}`));
+
+  // Проверяем коннектор MODX: он может быть закрыт анти-ботом хостинга,
+  // и это надо увидеть в логе сразу, а не в момент первой публикации
+  modx
+    .status()
+    .then((state) => {
+      if (!state.configured) {
+        console.log('ℹ️ Коннектор MODX не настроен (MODX_PUBLISHER_URL не задан) — публикация на сайт отключена');
+        return;
+      }
+      if (state.reachable) {
+        console.log(`✅ MODX на связи: v${state.modxVersion}, режим ${state.mode}`);
+        if (state.mode !== 'create_only') {
+          console.warn('⚠️ ВНИМАНИЕ: ai_publisher_mode=full — агент может менять существующий контент!');
+        }
+      } else {
+        console.error(`❌ Коннектор MODX недоступен: ${state.error}`);
+      }
+    })
+    .catch((error) => console.error(`❌ Проверка коннектора MODX: ${error.message}`));
 
   await startEmailWorker();
   startTaskExecutorWorker();

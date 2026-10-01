@@ -210,6 +210,10 @@ const HELP_TEXT =
   `/status — статус задач\n` +
   `/reset &lt;taskId&gt; — снять блокировку с задачи и разрешить повтор\n` +
   `/who — кто имеет доступ к боту\n` +
+  `/approvals — заявки на согласование, ожидающие решения\n` +
+  `/approve <id> — разрешить заявленное действие\n` +
+  `/deny <id> — отклонить заявку\n` +
+  `/modx — состояние коннектора публикации MODX\n` +
   `/allow &lt;chatId&gt; — разрешить доступ\n` +
   `/deny &lt;chatId&gt; — запретить доступ\n` +
   `/help — эта справка\n\n` +
@@ -386,6 +390,111 @@ function registerHandlers() {
         removed
           ? `✅ Доступ отозван у <code>${escapeTelegram(target)}</code>`
           : `❓ <code>${escapeTelegram(target)}</code> не найден в списке доступа`
+      );
+    } catch (error) {
+      await safeSendMessage(chatId, `❌ Ошибка: ${escapeTelegram(error.message)}`);
+    }
+  });
+
+  bot.onText(/\/approve(?:@\w+)?\s+(\S+)/, async (msg, match) => {
+    if (!(await requireAdmin(msg))) return;
+    const chatId = String(msg.chat.id);
+    const id = match[1].trim().toLowerCase();
+
+    try {
+      const approvals = require('./lib/approvals');
+      const decision = await approvals.decide(id, 'approved', chatId);
+
+      if (!decision.ok) {
+        return safeSendMessage(chatId, `❌ ${escapeTelegram(decision.error)}`);
+      }
+
+      const request = decision.request;
+      await safeSendMessage(
+        chatId,
+        `✅ Заявка <code>${escapeTelegram(request.id)}</code> одобрена.\n` +
+          `Действие: ${escapeTelegram(request.kindLabel)}\nОбъект: <code>${escapeTelegram(request.target)}</code>\n\n` +
+          'Агент выполнит его при следующем шаге задачи. Заявка одноразовая.'
+      );
+    } catch (error) {
+      await safeSendMessage(chatId, `❌ Ошибка: ${escapeTelegram(error.message)}`);
+    }
+  });
+
+  bot.onText(/\/deny(?:@\w+)?\s+(\S+)/, async (msg, match) => {
+    if (!(await requireAdmin(msg))) return;
+    const chatId = String(msg.chat.id);
+    const id = match[1].trim().toLowerCase();
+
+    try {
+      const approvals = require('./lib/approvals');
+      const decision = await approvals.decide(id, 'denied', chatId);
+
+      if (!decision.ok) {
+        return safeSendMessage(chatId, `❌ ${escapeTelegram(decision.error)}`);
+      }
+
+      await safeSendMessage(
+        chatId,
+        `🚫 Заявка <code>${escapeTelegram(decision.request.id)}</code> отклонена. Действие не будет выполнено.`
+      );
+    } catch (error) {
+      await safeSendMessage(chatId, `❌ Ошибка: ${escapeTelegram(error.message)}`);
+    }
+  });
+
+  bot.onText(/\/approvals(?:@\w+)?/, async (msg) => {
+    if (!(await requireAdmin(msg))) return;
+    const chatId = String(msg.chat.id);
+
+    try {
+      const approvals = require('./lib/approvals');
+      const pending = await approvals.listPending(10);
+
+      if (pending.length === 0) {
+        return safeSendMessage(chatId, '✅ Ожидающих заявок нет.');
+      }
+
+      const lines = pending.map(
+        (request) =>
+          `• <code>${escapeTelegram(request.id)}</code> — ${escapeTelegram(request.kindLabel)}\n` +
+          `  объект: <code>${escapeTelegram(request.target)}</code>\n` +
+          `  причина: ${escapeTelegram(String(request.reason).slice(0, 160))}\n` +
+          `  <code>/approve ${escapeTelegram(request.id)}</code> или <code>/deny ${escapeTelegram(request.id)}</code>`
+      );
+
+      await safeSendMessage(chatId, `🔐 <b>Ожидают решения (${pending.length}):</b>\n\n${lines.join('\n\n')}`);
+    } catch (error) {
+      await safeSendMessage(chatId, `❌ Ошибка: ${escapeTelegram(error.message)}`);
+    }
+  });
+
+  bot.onText(/\/modx(?:@\w+)?/, async (msg) => {
+    if (!(await requireAdmin(msg))) return;
+    const chatId = String(msg.chat.id);
+
+    try {
+      const modx = require('./lib/modx-client');
+      const state = await modx.status();
+
+      if (!state.configured) {
+        return safeSendMessage(chatId, `⚠️ ${escapeTelegram(state.error)}`);
+      }
+
+      if (!state.reachable) {
+        return safeSendMessage(
+          chatId,
+          `❌ Коннектор MODX настроен, но недоступен.\n${escapeTelegram(state.error || '')}`
+        );
+      }
+
+      await safeSendMessage(
+        chatId,
+        `✅ <b>MODX на связи</b>\n` +
+          `Версия: ${escapeTelegram(state.modxVersion || '?')}\n` +
+          `Режим политики: <b>${escapeTelegram(state.mode || '?')}</b>` +
+          (state.mode === 'create_only' ? ' (чужой контент трогать нельзя)' : ' ⚠️ FULL') +
+          `\nСайт: ${escapeTelegram(state.siteUrl || '?')}`
       );
     } catch (error) {
       await safeSendMessage(chatId, `❌ Ошибка: ${escapeTelegram(error.message)}`);

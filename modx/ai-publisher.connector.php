@@ -35,6 +35,14 @@
  *   экранируют и валидируют поля; содержимое ресурса сохраняется как есть
  *   (это осознанно: агент присылает готовый HTML/Markdown-разметку).
  *
+ * ПОЛИТИКА БЕЗОПАСНОСТИ
+ * По умолчанию действует режим create_only: агент создаёт новые ресурсы
+ * (черновиками) и может публиковать только созданное им самим. Изменение
+ * или публикация УЖЕ существующих страниц отклоняются с 403 — даже при
+ * верном токене. Переключить режим можно настройкой MODX ai_publisher_mode=full,
+ * и это осознанное решение владельца, а не агента.
+ * Действия delete в коннекторе нет и не будет.
+ *
  * ДОНОРСКИЙ РЕСУРС ВМЕСТО ПЕРЕЧИСЛЕНИЯ ЧАНКОВ
  * У страниц услуг разные шаблоны и наборы TV. Перечислять их не нужно:
  * при создании передай donorId — ID существующей похожей страницы. Коннектор
@@ -110,6 +118,66 @@ if ($expectedToken === '' || !is_string($provided) || $provided === '' || !hash_
     ]);
 }
 
+/*
+ * ПОЛИТИКА БЕЗОПАСНОСТИ (жёсткая, на стороне сервера)
+ *
+ * ai_publisher_mode:
+ *   create_only (по умолчанию, действует и когда настройка отсутствует) —
+ *       агент может СОЗДАВАТЬ новые ресурсы и публиковать ТОЛЬКО созданные им самим;
+ *       изменение и публикация уже существующего контента отклоняются с 403.
+ *   full —
+ *       разрешает update/publish любых ресурсов. Включается только осознанно,
+ *       когда владельцу действительно нужно пакетное обновление.
+ *
+ * Владение помечается в properties ресурса при создании, поэтому защита
+ * переживает рестарты и не зависит от памяти процесса.
+ */
+$mode = $modx->getOption('ai_publisher_mode', null, 'create_only');
+if ($mode !== 'full') {
+    $mode = 'create_only';
+}
+
+function isAgentOwned($resource)
+{
+    $properties = $resource->get('properties');
+    if (is_string($properties)) {
+        $properties = json_decode($properties, true);
+    }
+    return is_array($properties) && isset($properties['ai_publisher']);
+}
+
+function markAgentOwned($resource, $taskId)
+{
+    $properties = $resource->get('properties');
+    if (is_string($properties)) {
+        $properties = json_decode($properties, true);
+    }
+    if (!is_array($properties)) {
+        $properties = [];
+    }
+    $properties['ai_publisher'] = [
+        'created_at' => date('c'),
+        'task' => (string) $taskId,
+    ];
+    $resource->set('properties', $properties);
+    return $resource->save();
+}
+
+function guardExisting($modx, $mode, $resource, $action)
+{
+    if ($mode === 'full' || isAgentOwned($resource)) {
+        return null;
+    }
+    return [
+        'success' => false,
+        'error' => 'Политика безопасности: изменение или публикация существующего контента '
+            . 'запрещены (ai_publisher_mode=create_only). Действие "' . $action . '" отклонено. '
+            . 'Запроси согласование у владельца: агент создаст заявку, владелец одобрит её '
+            . 'командой /approve в Telegram, после чего действие выполнится.',
+        'policy' => 'create_only',
+    ];
+}
+
 $action = isset($_GET['action']) ? (string) $_GET['action'] : 'ping';
 $method = $_SERVER['REQUEST_METHOD'];
 
@@ -125,6 +193,7 @@ if ($action === 'ping') {
         'success' => true,
         'modx_version' => $modx->getVersionData()['version'],
         'site_url' => $modx->getOption('site_url'),
+        'mode' => $mode,
         'time' => date('c'),
     ]);
 }
@@ -161,6 +230,7 @@ if ($action === 'resource') {
             'template' => $resource->get('template'),
             'parent' => $resource->get('parent'),
             'published' => (bool) $resource->get('published'),
+            'agentOwned' => isAgentOwned($resource),
             'tvs' => $tvs,
         ],
     ]);
@@ -245,11 +315,13 @@ if ($action === 'create') {
         respond($modx, 422, ['success' => false, 'error' => $response->getAllErrorMessages()]);
     }
 
-    $resource = $response->getObject();
+    $created = $modx->getObject('modResource', (int) $response->getObject()['id']);
     foreach ($tvs as $name => $value) {
-        $resource->setTVValue((string) $name, $value);
+        $created->setTVValue((string) $name, $value);
     }
+    markAgentOwned($created, $payload['taskId'] ?? '');
     $modx->cacheManager->refresh();
+    $resource = $created;
 
     respond($modx, 200, [
         'success' => true,
@@ -261,8 +333,14 @@ if ($action === 'create') {
 
 if ($action === 'update') {
     $id = (int) ($payload['id'] ?? 0);
-    if ($id <= 0 || !$modx->getObject('modResource', $id)) {
+    $existing = $id > 0 ? $modx->getObject('modResource', $id) : null;
+    if (!$existing) {
         respond($modx, 404, ['success' => false, 'error' => "Ресурс $id не найден"]);
+    }
+
+    $denied = guardExisting($modx, $mode, $existing, 'update');
+    if ($denied !== null) {
+        respond($modx, 403, $denied);
     }
 
     $built = buildResourceData($modx, ['pagetitle' => 'x'] + $payload); // pagetitle-заглушка: при update поля опциональны
@@ -303,6 +381,11 @@ if ($action === 'publish') {
     $resource = $modx->getObject('modResource', $id);
     if (!$resource) {
         respond($modx, 404, ['success' => false, 'error' => "Ресурс $id не найден"]);
+    }
+
+    $denied = guardExisting($modx, $mode, $resource, 'publish');
+    if ($denied !== null) {
+        respond($modx, 403, $denied);
     }
 
     $resource->set('published', (int) ($payload['published'] ?? 1));
