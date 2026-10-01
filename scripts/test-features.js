@@ -1054,6 +1054,139 @@ async function main() {
   });
 
   /* ================================================================== */
+  console.log('\n— Семантика без Wordstat —');
+  /* ================================================================== */
+
+  const keywords = require('../lib/keywords');
+
+  await test('normalize: регистр, ё, пробелы', () => {
+    assert.strictEqual(keywords.normalize('  СЕО   Аудит '), 'сео аудит');
+    assert.strictEqual(keywords.normalize('Ёлка ёлка'), 'елка елка');
+    assert.strictEqual(keywords.normalize(''), '');
+    assert.strictEqual(keywords.normalize(null), '');
+  });
+
+  await test('intentOf: маркеры интентов не хватают лишнего', () => {
+    assert.strictEqual(keywords.intentOf('купить ноутбук москва'), 'commercial');
+    assert.strictEqual(keywords.intentOf('seo аудит цена'), 'commercial');
+    assert.strictEqual(keywords.intentOf('сео аудит москва'), 'local');
+    assert.strictEqual(keywords.intentOf('как сделать сео аудит'), 'info');
+    assert.strictEqual(keywords.intentOf('сео аудит это'), 'info');
+    assert.strictEqual(keywords.intentOf('сео аудит или контекст'), 'comparison');
+    assert.strictEqual(keywords.intentOf('сео аудит отзывы'), 'reviews');
+    assert.strictEqual(keywords.intentOf('личный кабинет вход'), 'navigation');
+    // «сайт» больше не навигационный маркер: это основное слово ниши
+    assert.strictEqual(keywords.intentOf('сео аудит сайта'), 'general');
+  });
+
+  await test('demandLabel: пороги прокси-спроса', () => {
+    assert.strictEqual(keywords.demandLabel({ hits: 1, sources: new Set(['yandex']) }), 'low');
+    assert.strictEqual(keywords.demandLabel({ hits: 2, sources: new Set(['yandex', 'google']) }), 'medium');
+    assert.strictEqual(keywords.demandLabel({ hits: 3, sources: new Set(['yandex', 'google', 'duckduckgo']) }), 'high');
+  });
+
+  await test('research: собирает из трёх источников, фильтрует склейки и кластеризует', async () => {
+    // Мок-сервер, имитирующий форматы всех трёх источников подсказок
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url, 'http://localhost');
+      const part = url.searchParams.get('part') || url.searchParams.get('q') || '';
+      res.setHeader('Content-Type', 'application/json');
+
+      if (url.pathname === '/yandex') {
+        return res.end(JSON.stringify([
+          part + ' сайта', part + ' сайта цена', part + ' моссео', part + ' это',
+        ]));
+      }
+      if (url.pathname === '/google') {
+        return res.end(JSON.stringify([part, [part + ' сайта', part + ' онлайн', part + ' моссео']]));
+      }
+      if (url.pathname === '/ddg') {
+        return res.end(JSON.stringify([{ phrase: part + ' сайта' }, { phrase: part + ' отзывы' }]));
+      }
+      res.statusCode = 404;
+      res.end('[]');
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+
+    for (const key of ['SUGGEST_YANDEX_URL', 'SUGGEST_GOOGLE_URL', 'SUGGEST_DDG_URL']) process.env[key] = undefined;
+    process.env.SUGGEST_YANDEX_URL = base + '/yandex';
+    process.env.SUGGEST_GOOGLE_URL = base + '/google';
+    process.env.SUGGEST_DDG_URL = base + '/ddg';
+    for (const key of Object.keys(require.cache)) {
+      if (/lib[\\/](config|keywords)\.js$/.test(key)) delete require.cache[key];
+    }
+    const freshKeywords = require('../lib/keywords');
+
+    try {
+      const result = await freshKeywords.research('сео аудит', { maxQueries: 12 });
+
+      assert.strictEqual(result.success, true, result.error);
+      assert.ok(result.collected > 5, `собрано ${result.collected}`);
+      assert.ok(result.queriesUsed <= 12, `бюджет превышен: ${result.queriesUsed}`);
+
+      const all = Object.values(result.clusters).flat().map((item) => item.keyword);
+      assert.ok(all.includes('сео аудит сайта'), 'ключевой хвост потерян');
+      assert.ok(!all.some((k) => /моссео/.test(k)), 'склейка не отфильтрована: ' + all.join(', '));
+
+      assert.ok(result.clusters.commercial, 'коммерческий кластер не выделен');
+      assert.ok(result.clusters.commercial.some((i) => /цена/.test(i.keyword)));
+      assert.ok(result.clusters.reviews?.some((i) => /отзывы/.test(i.keyword)), 'кластер отзывов не выделен');
+
+      // Спрос помечен как оценка, а не как частотность
+      assert.ok(/не частотность Wordstat/.test(result.note), 'нет оговорки про природу метки спроса');
+      assert.ok(result.top.length <= 30);
+      assert.ok(result.top[0].hits >= result.top[result.top.length - 1].hits, 'top не отсортирован');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+      for (const key of ['SUGGEST_YANDEX_URL', 'SUGGEST_GOOGLE_URL', 'SUGGEST_DDG_URL']) delete process.env[key];
+      for (const key of Object.keys(require.cache)) {
+        if (/lib[\\/](config|keywords)\.js$/.test(key)) delete require.cache[key];
+      }
+    }
+  });
+
+  await test('research: все источники молчат — честная ошибка, а не пустой успех', async () => {
+    process.env.SUGGEST_YANDEX_URL = 'http://127.0.0.1:9/nope';
+    process.env.SUGGEST_GOOGLE_URL = 'http://127.0.0.1:9/nope';
+    process.env.SUGGEST_DDG_URL = 'http://127.0.0.1:9/nope';
+    for (const key of Object.keys(require.cache)) {
+      if (/lib[\\/](config|keywords)\.js$/.test(key)) delete require.cache[key];
+    }
+    const freshKeywords = require('../lib/keywords');
+
+    try {
+      const result = await freshKeywords.research('сео аудит', { maxQueries: 5, alphabet: false });
+      assert.strictEqual(result.success, false);
+      assert.ok(/подсказок|источник/i.test(result.error), result.error);
+    } finally {
+      for (const key of ['SUGGEST_YANDEX_URL', 'SUGGEST_GOOGLE_URL', 'SUGGEST_DDG_URL']) delete process.env[key];
+      for (const key of Object.keys(require.cache)) {
+        if (/lib[\\/](config|keywords)\.js$/.test(key)) delete require.cache[key];
+      }
+    }
+  });
+
+  await test('keyword_research объявлен, реализован и валидирует seed', async () => {
+    const names = tools.map((t) => t.function.name);
+    assert.ok(names.includes('keyword_research'));
+    const { TOOL_HANDLERS } = require('../ai-agent');
+    assert.strictEqual(typeof TOOL_HANDLERS.keyword_research, 'function');
+
+    const executors = require('../tool-executors');
+    const empty = await executors.keywordResearch('   ');
+    assert.strictEqual(empty.success, false);
+    assert.ok(/seed/i.test(empty.error));
+  });
+
+  await test('промпт семантики требует keyword_research и запрещает выдумывать частотности', () => {
+    const seo = require('../prompts/seo');
+    assert.ok(seo.keywords.includes('keyword_research'), 'промпт не использует инструмент');
+    assert.ok(/не выдумывай частотности/i.test(seo.keywords), 'нет запрета на выдуманные частотности');
+    assert.ok(/Search Console|Метрик/i.test(seo.keywords), 'нет отсылки к источнику реальных показов');
+  });
+
+  /* ================================================================== */
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${'='.repeat(60)}`);

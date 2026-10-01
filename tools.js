@@ -82,6 +82,30 @@ const tools = [
   {
     type: 'function',
     function: {
+      name: 'keyword_research',
+      description:
+        'Собрать семантическое ядро по опорному запросу БЕЗ платных API: подсказки Яндекса, ' +
+        'Google и DuckDuckGo плюс алфавитная добыча хвостов. Возвращает кластеры по интенту ' +
+        '(commercial, local, info, comparison, reviews, navigation, general) и метку спроса ' +
+        'high/medium/low. Важно: метка спроса — это прокси по числу независимых встреч в подсказках, ' +
+        'а НЕ частотность Wordstat; реальные показы дают только Search Console и Метрика.',
+      parameters: {
+        type: 'object',
+        properties: {
+          seed: { type: 'string', description: 'Опорный запрос: «seo аудит», «разработка сайта»' },
+          city: { type: 'string', description: 'Гео-модификатор: «Москва» — добавит ветки «запрос + город»' },
+          maxQueries: {
+            type: 'number',
+            description: 'Бюджет запросов к подсказкам (по умолчанию 60, максимум 150)',
+          },
+        },
+        required: ['seed'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'seo_audit',
       description:
         'Механический SEO-аудит страницы: title/description и их длины, canonical, robots, ' +

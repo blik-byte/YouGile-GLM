@@ -179,6 +179,7 @@ const TOOL_HANDLERS = {
   web_analysis: (args) => executors.webAnalysis(args.url, args.query),
   analyze_image: (args) => executors.analyzeImage(args.url, args.question),
   seo_audit: (args) => executors.seoAudit(args.url, args.urls, args.probeDomain !== false),
+  keyword_research: (args) => executors.keywordResearch(args.seed, args),
   save_result: (args, ctx) => executors.saveResult(args.taskId || ctx.taskId, args.step, args.data),
   update_task_status: (args, ctx) => executors.updateTaskStatus(args.taskId || ctx.taskId, args.status),
   add_comment: (args, ctx) => executors.addComment(args.taskId || ctx.taskId, args.text),

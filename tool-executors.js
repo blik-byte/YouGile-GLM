@@ -331,6 +331,28 @@ async function analyzeImage(url, question = '') {
 }
 
 /* ------------------------------------------------------------------ */
+// keyword_research
+/* ------------------------------------------------------------------ */
+
+const keywords = require('./lib/keywords');
+
+/**
+ * Сбор семантики по опорному запросу: подсказки Яндекса, Google и DuckDuckGo,
+ * алфавитная добыча хвостов, кластеризация по интенту.
+ */
+async function keywordResearch(seed, options = {}) {
+  const result = await keywords.research(toStr(seed).trim(), {
+    city: toStr(options.city).trim() || undefined,
+    maxQueries: Number(options.maxQueries) || 60,
+    alphabet: options.alphabet !== false,
+  });
+
+  if (!result.success) return result;
+
+  return { success: true, ...result };
+}
+
+/* ------------------------------------------------------------------ */
 // seo_audit
 /* ------------------------------------------------------------------ */
 
@@ -639,6 +661,7 @@ module.exports = {
   webAnalysis,
   analyzeImage,
   seoAudit,
+  keywordResearch,
   createDocument,
   saveResult,
   updateTaskStatus,
