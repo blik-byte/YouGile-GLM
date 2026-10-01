@@ -331,6 +331,65 @@ async function analyzeImage(url, question = '') {
 }
 
 /* ------------------------------------------------------------------ */
+// semantics_draft / semantics_status
+/* ------------------------------------------------------------------ */
+
+const semantics = require('./lib/semantics');
+
+/**
+ * Сборка черновика семантики и отправка владельцу на согласование.
+ * Страницы по черновику создать нельзя, пока владелец не одобрит заявку.
+ */
+async function semanticsDraft(options = {}) {
+  try {
+    const draft = await semantics.buildDraft({
+      groups: options.groups,
+      expand: options.expand !== false,
+      maxQueriesPerSeed: Number(options.maxQueriesPerSeed) || 25,
+      taskId: options.taskId,
+      comment: toStr(options.comment).trim(),
+    });
+    return draft;
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+async function semanticsStatus(draftId) {
+  try {
+    if (draftId) {
+      const draft = await semantics.getDraft(draftId);
+      if (!draft) return { success: false, error: `Черновик ${draftId} не найден` };
+      return {
+        success: true,
+        id: draft.id,
+        title: draft.title,
+        status: await semantics.draftStatus(draft),
+        approvalId: draft.approvalId || null,
+        totals: draft.totals,
+      };
+    }
+
+    const drafts = await semantics.listDrafts(10);
+    return {
+      success: true,
+      drafts: await Promise.all(
+        drafts.map(async (draft) => ({
+          id: draft.id,
+          title: draft.title,
+          status: await semantics.draftStatus(draft),
+          approvalId: draft.approvalId || null,
+          totals: draft.totals,
+          createdAt: draft.createdAt,
+        }))
+      ),
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/* ------------------------------------------------------------------ */
 // keyword_research
 /* ------------------------------------------------------------------ */
 
@@ -662,6 +721,8 @@ module.exports = {
   analyzeImage,
   seoAudit,
   keywordResearch,
+  semanticsDraft,
+  semanticsStatus,
   createDocument,
   saveResult,
   updateTaskStatus,

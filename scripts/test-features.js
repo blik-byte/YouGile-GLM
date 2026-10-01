@@ -1187,6 +1187,195 @@ async function main() {
   });
 
   /* ================================================================== */
+  console.log('\n— Семантика: черновики и гейт согласования —');
+  /* ================================================================== */
+
+  /** Мини-БД в памяти: поддерживает коллекции, нужные approvals и semantics. */
+  function makeFakeDb() {
+    const store = new Map();
+    const coll = (name) => {
+      if (!store.has(name)) store.set(name, []);
+      const rows = store.get(name);
+      return {
+        insertOne: async (doc) => { rows.push(doc); return { insertedId: rows.length }; },
+        findOne: async (query) => rows.find((row) => Object.entries(query).every(([k, v]) => row[k] === v)) || null,
+        findOneAndUpdate: async (query, update) => {
+          const row = rows.find((r2) => Object.entries(query).every(([k, v]) => r2[k] === v));
+          if (!row) return null;
+          Object.assign(row, update.$set || {});
+          return row;
+        },
+        updateOne: async (query, update) => {
+          const row = rows.find((r2) => Object.entries(query).every(([k, v]) => r2[k] === v));
+          if (row) Object.assign(row, update.$set || {});
+          return { modifiedCount: row ? 1 : 0 };
+        },
+        find: (query = {}) => ({
+          sort: () => ({
+            limit: () => ({
+              toArray: async () =>
+                rows.filter((row) => Object.entries(query).every(([k, v]) => row[k] === v)),
+            }),
+          }),
+        }),
+        estimatedDocumentCount: async () => rows.length,
+      };
+    };
+    return { getDb: async () => ({ collection: coll }), coll, store };
+  }
+
+  /** Подмена db и keywords заглушками на время прогона. */
+  async function withSemanticsStubs(run) {
+    const dbPath = require.resolve('../db');
+    const kwPath = require.resolve('../lib/keywords');
+    const originalDb = require.cache[dbPath];
+    const originalKw = require.cache[kwPath];
+    const fake = makeFakeDb();
+
+    require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: { ...fake, COLLECTIONS: {} } };
+    require.cache[kwPath] = {
+      id: kwPath, filename: kwPath, loaded: true,
+      exports: {
+        normalize: (v) => String(v || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim(),
+        intentOf: (v) => (/цена|купить/.test(v) ? 'commercial' : 'general'),
+        research: async (seed) => ({
+          success: true,
+          seed,
+          top: [
+            { keyword: `${seed} цена`, demand: 'high', sources: ['yandex'], hits: 5 },
+            { keyword: `${seed} отзывы`, demand: 'medium', sources: ['google'], hits: 3 },
+          ],
+        }),
+      },
+    };
+    for (const key of Object.keys(require.cache)) {
+      if (/lib[\\/](semantics|approvals|tool-executors)\.js$/.test(key)) delete require.cache[key];
+    }
+
+    try {
+      return await run(fake);
+    } finally {
+      if (originalDb) require.cache[dbPath] = originalDb; else delete require.cache[dbPath];
+      if (originalKw) require.cache[kwPath] = originalKw; else delete require.cache[kwPath];
+      for (const key of Object.keys(require.cache)) {
+        if (/lib[\\/](semantics|approvals|tool-executors)\.js$/.test(key)) delete require.cache[key];
+      }
+    }
+  }
+
+  await test('каталог семантики загружается и группы ищутся по id и названию', () => {
+    const semantics = require('../lib/semantics');
+    const catalog = semantics.loadCatalog();
+
+    assert.ok(catalog.sections.length >= 3, 'секций меньше трёх');
+    const all = catalog.sections.reduce((sum, section) => sum + section.groups.length, 0);
+    assert.ok(all >= 15, `групп ${all}, ожидалось не меньше 15`);
+
+    const byId = semantics.findGroups(catalog, 'seo-wordpress');
+    assert.strictEqual(byId.length, 1);
+    assert.ok(byId[0].queries.length > 5, 'у CMS-группы должны быть запросы владельца');
+    assert.ok(byId[0].queries.every((q) => q.freqSource === 'owner'), 'частотности владельца помечены неверно');
+
+    const byTitle = semantics.findGroups(catalog, 'Интернет-магазины');
+    assert.strictEqual(byTitle.length, 1);
+    assert.ok(byTitle[0].subcategories.length >= 10, 'подкатегории интернет-магазинов потеряны');
+  });
+
+  await test('buildDraft: частотности владельца неприкосновенны, подсказки без частот', async () => {
+    await withSemanticsStubs(async () => {
+      const semantics = require('../lib/semantics');
+      const draft = await semantics.buildDraft({ groups: 'seo-wordpress', expand: true });
+
+      assert.strictEqual(draft.success, true, draft.error);
+      const group = draft.groups[0];
+      const owner = group.queries.filter((q) => q.freqSource === 'owner');
+      const suggested = group.queries.filter((q) => q.freqSource === 'suggest');
+
+      assert.ok(owner.length > 5, 'запросы владельца потеряны');
+      assert.ok(owner.every((q) => q.freq > 0), 'у запросов владельца должна остаться частотность');
+      assert.ok(suggested.every((q) => q.freq === null), 'кандидатам из подсказок приписана частотность!');
+      assert.ok(suggested.length > 0, 'до-расширение не сработало');
+
+      // Заявка на согласование создана и привязана
+      assert.ok(draft.approvalId, 'нет заявки на согласование');
+      const approval = await require('../lib/approvals').get(draft.approvalId);
+      assert.strictEqual(approval.kind, 'semantics_draft');
+      assert.strictEqual(approval.status, 'pending');
+
+      // Статус черновика — ожидание
+      assert.strictEqual(await semantics.draftStatus(draft), 'pending');
+      const gate = await semantics.assertApproved(draft.id);
+      assert.strictEqual(gate.ok, false, 'гейт пропустил неодобренный черновик!');
+      assert.ok(/запрещено процессом/i.test(gate.error), gate.error);
+    });
+  });
+
+  await test('после /approve гейт открывается, правки черновика закрываются', async () => {
+    await withSemanticsStubs(async () => {
+      const semantics = require('../lib/semantics');
+      const approvals = require('../lib/approvals');
+
+      const draft = await semantics.buildDraft({ groups: 'seo-tilda' });
+      assert.strictEqual(draft.success, true, draft.error);
+
+      const decision = await approvals.decide(draft.approvalId, 'approved', 'owner-chat');
+      assert.strictEqual(decision.ok, true, decision.error);
+
+      assert.strictEqual(await semantics.draftStatus(draft), 'approved');
+      const gate = await semantics.assertApproved(draft.id);
+      assert.strictEqual(gate.ok, true, `гейт не открылся: ${gate.error}`);
+
+      // Правки одобренного черновика запрещены: изменения только новым черновиком
+      const revision = await semantics.reviseDraft(draft.id, { remove: ['tilda seo'] });
+      assert.strictEqual(revision.success, false);
+      assert.ok(/уже одобрен/i.test(revision.error), revision.error);
+    });
+  });
+
+  await test('reviseDraft: владелец вычеркивает мусор и добавляет свои запросы до одобрения', async () => {
+    await withSemanticsStubs(async () => {
+      const semantics = require('../lib/semantics');
+      const draft = await semantics.buildDraft({ groups: 'seo-wordpress' });
+
+      const before = draft.groups[0].queries.length;
+      const victim = draft.groups[0].queries[draft.groups[0].queries.length - 1].q;
+
+      const revision = await semantics.reviseDraft(draft.id, {
+        remove: [victim],
+        add: [{ q: 'продвижение сайта на вордпресс цена', freq: 140 }],
+      });
+
+      assert.strictEqual(revision.success, true, revision.error);
+      const updated = await semantics.getDraft(draft.id);
+      const queries = updated.groups[0].queries;
+
+      assert.strictEqual(queries.length, before, 'число запросов изменилось неожиданно');
+      assert.ok(!queries.some((q) => q.q === victim), 'вычеркнутый запрос остался');
+      const added = queries.find((q) => q.q === 'продвижение сайта на вордпресс цена');
+      assert.ok(added, 'добавленный запрос не найден');
+      assert.strictEqual(added.freq, 140, 'частотность владельца не сохранилась');
+      assert.strictEqual(added.freqSource, 'owner', 'запрос с частотностью должен помечаться как owner');
+    });
+  });
+
+  await test('semantics_draft и semantics_status объявлены и реализованы', () => {
+    const names = tools.map((t) => t.function.name);
+    assert.ok(names.includes('semantics_draft'));
+    assert.ok(names.includes('semantics_status'));
+    const { TOOL_HANDLERS } = require('../ai-agent');
+    assert.strictEqual(typeof TOOL_HANDLERS.semantics_draft, 'function');
+    assert.strictEqual(typeof TOOL_HANDLERS.semantics_status, 'function');
+  });
+
+  await test('промт требует согласования семантики до создания страниц', () => {
+    const { buildSystemPrompt } = require('../ai-agent');
+    const prompt = buildSystemPrompt('t', 'задача', 'описание', '');
+    assert.ok(/СОГЛАСОВАНИЕ/i.test(prompt) || /согласование/i.test(prompt));
+    assert.ok(/approved/.test(prompt), 'нет требования статуса approved');
+    assert.ok(/Частотности владельца не пересчитывай/i.test(prompt), 'нет защиты частотностей владельца');
+  });
+
+  /* ================================================================== */
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${'='.repeat(60)}`);

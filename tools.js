@@ -82,6 +82,44 @@ const tools = [
   {
     type: 'function',
     function: {
+      name: 'semantics_draft',
+      description:
+        'Собрать черновик семантического ядра по каталогу владельца и отправить его НА СОГЛАСОВАНИЕ. ' +
+        'Запросы владельца берутся с ЕГО частотностями и не пересчитываются; до-расширение подсказками ' +
+        'помечается как кандидаты без частотностей. Создаёт заявку /approve для владельца. ' +
+        'ВАЖНО: страницы по черновику создавать запрещено, пока черновик не одобрен.',
+      parameters: {
+        type: 'object',
+        properties: {
+          groups: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'ID или названия групп каталога, например ["seo-wordpress", "Интернет-магазины"]. Пусто = все группы.',
+          },
+          expand: { type: 'boolean', description: 'До-расширять подсказками поисковиков (по умолчанию true)' },
+          comment: { type: 'string', description: 'Пояснение владельцу: что в черновике и что предлагаешь решить' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'semantics_status',
+      description:
+        'Статус черновиков семантики: pending (ждёт владельца), approved (одобрен, можно делать страницы), ' +
+        'denied (отклонён). Без аргумента возвращает последние черновики, с draftId — один.',
+      parameters: {
+        type: 'object',
+        properties: { draftId: { type: 'string', description: 'ID черновика, если нужен конкретный' } },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'keyword_research',
       description:
         'Собрать семантическое ядро по опорному запросу БЕЗ платных API: подсказки Яндекса, ' +

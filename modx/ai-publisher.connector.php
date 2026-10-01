@@ -191,7 +191,9 @@ if (!is_array($payload)) {
 if ($action === 'ping') {
     respond($modx, 200, [
         'success' => true,
-        'modx_version' => $modx->getVersionData()['version'],
+        // getVersionData()['version'] отдаёт только мажорную цифру («2»),
+        // поэтому шлём полную строку версии ядра
+        'modx_version' => $modx->version ?? ($modx->getVersionData()['full_version'] ?? 'unknown'),
         'site_url' => $modx->getOption('site_url'),
         'mode' => $mode,
         'time' => date('c'),

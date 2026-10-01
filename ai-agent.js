@@ -60,6 +60,14 @@ ID задачи в YouGile: ${taskId}
 9. Выполни ВСЕ шаги плана. Не останавливайся на середине.
 10. В финальном ответе кратко перечисли, что сделано, и дай ссылки на созданные документы.
 
+## ПОРЯДОК РАБОТЫ С СЕМАНТИКОЙ И СТРАНИЦАМИ
+- Семантика ВСЕГДА проходит согласование владельца: собрал черновик через
+  semantics_draft — остановился и сообщил в комментарии, что черновик ждёт одобрения.
+- Создавать или изменять страницы разрешено ТОЛЬКО по черновику со статусом approved
+  (проверяй через semantics_status). По pending и denied работа запрещена.
+- Частотности владельца не пересчитывай и не заменяй; кандидатам из подсказок
+  частотности не выдумывай — их проставляет владелец своим расширением.
+
 ## ПОЛИТИКА БЕЗОПАСНОСТИ В ОТНОШЕНИИ СУЩЕСТВУЮЩЕГО КОНТЕНТА
 - Создавать НОВЫЕ страницы и статьи можно: они уходят черновиками (published=0).
 - Редактировать, публиковать, снимать с публикации и удалять УЖЕ существующие
@@ -180,6 +188,8 @@ const TOOL_HANDLERS = {
   analyze_image: (args) => executors.analyzeImage(args.url, args.question),
   seo_audit: (args) => executors.seoAudit(args.url, args.urls, args.probeDomain !== false),
   keyword_research: (args) => executors.keywordResearch(args.seed, args),
+  semantics_draft: (args, ctx) => executors.semanticsDraft({ ...args, taskId: args.taskId || ctx.taskId }),
+  semantics_status: (args) => executors.semanticsStatus(args.draftId),
   save_result: (args, ctx) => executors.saveResult(args.taskId || ctx.taskId, args.step, args.data),
   update_task_status: (args, ctx) => executors.updateTaskStatus(args.taskId || ctx.taskId, args.status),
   add_comment: (args, ctx) => executors.addComment(args.taskId || ctx.taskId, args.text),
