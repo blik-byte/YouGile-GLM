@@ -26,10 +26,21 @@ const MAX_STEPS = Number(process.env.GLM_MAX_STEPS || 25);
 const MAX_STEPS_FOR_QUESTION = Number(process.env.GLM_MAX_STEPS_QUESTION || 6);
 
 /** Правила агента, общие для всех специализированных промптов. */
-function buildSystemPrompt(taskId, taskTitle, taskDescription, specialistPrompt) {
+function buildSystemPrompt(taskId, taskTitle, taskDescription, specialistPrompt, plan = null) {
   const base = specialistPrompt || '';
 
-  return `${base}
+  let planSection = '';
+  if (plan && Array.isArray(plan.steps) && plan.steps.length > 0) {
+    planSection = `
+
+---
+## ПЛАН, СОСТАВЛЕННЫЙ ПЛАНИРОВЩИКОМ (следуй ему)
+${plan.steps.map((step, index) => `${index + 1}. ${step.title}${step.tools?.length ? ` [инструменты: ${step.tools.join(', ')}]` : ''}${step.output ? ` → на выходе: ${step.output}` : ''}`).join('\n')}
+${plan.success_criteria.length ? `\nКритерии готовности:\n${plan.success_criteria.map((c) => `- ${c}`).join('\n')}` : ''}
+${plan.risks.length ? `\nУчти риски:\n${plan.risks.map((r) => `- ${r}`).join('\n')}` : ''}`;
+  }
+
+  return `${base}${planSection}
 
 ---
 ## КОНТЕКСТ ЗАДАЧИ
@@ -50,6 +61,105 @@ ID задачи в YouGile: ${taskId}
 10. В финальном ответе кратко перечисли, что сделано, и дай ссылки на созданные документы.`;
 }
 
+/* ------------------------------------------------------------------ */
+/* Планировщик и рецензент (сильная модель)                            */
+/* ------------------------------------------------------------------ */
+
+const PLANNER_PROMPT = `Ты старший планировщик задач. Составь план выполнения бизнес-задачи.
+
+Требования к плану:
+1. Шаги должны быть конкретными и проверяемыми: не «изучить рынок», а «собрать цены 5 конкурентов по товару X в таблицу».
+2. Укажи, какие инструменты нужны для шага: web_search, web_analysis, analyze_image, create_document, save_result, add_comment.
+3. Добавь критерии готовности: по каким признакам понятно, что задача выполнена.
+4. Отметь риски: чего может не хватать (данных, доступов, актуальности).
+5. Не более 10 шагов. Если задача тривиальна — 2-3 шага, не раздувай.
+
+Верни ТОЛЬКО JSON:
+{
+  "steps": [{"title": "название шага", "tools": ["web_search"], "output": "что получим на выходе"}],
+  "success_criteria": ["критерий 1"],
+  "risks": ["риск 1"]
+}`;
+
+const REVIEW_PROMPT = `Ты рецензент результатов работы AI-агента. Оцени готовый отчёт ДО его публикации заказчику.
+
+Проверь:
+1. Ответ действительно отвечает на поставленную задачу, а не на похожую.
+2. В отчёте есть конкретика: цифры, ссылки, названия — а не общие слова.
+3. Нет признаков выдуманных данных: утверждений без источника там, где источник требовался.
+4. Все обещанные артефакты (документы, таблицы) упомянуты и на них есть ссылки.
+5. Формулировки понятны заказчику без дополнительного контекста.
+
+Верни ТОЛЬКО JSON:
+{
+  "approved": true или false,
+  "remarks": "что поправить, если не одобreno; пустая строка если одобрено",
+  "checklist": [{"item": "что проверяли", "passed": true или false}]
+}`;
+
+/**
+ * План задачи от сильной модели.
+ * Ошибка планировщика НЕ роняет задачу: исполнитель просто пойдёт по своему
+ * циклу, как раньше. Планирование — усиление, а не обязательная ступень.
+ *
+ * @returns {Promise<{steps:Array, success_criteria:Array, risks:Array}|null>}
+ */
+async function planTask(taskId, taskTitle, taskDescription) {
+  try {
+    const plan = await chatJson(
+      PLANNER_PROMPT,
+      `Задача: ${taskTitle}\nОписание: ${taskDescription || '(без описания)'}\nID задачи: ${taskId}`,
+      { role: 'planner', timeout: 90000 }
+    );
+
+    if (!plan || !Array.isArray(plan.steps) || plan.steps.length === 0) {
+      console.warn('⚠️ Планировщик вернул пустой план — продолжаю без него');
+      return null;
+    }
+
+    console.log(`🧭 Планировщик предложил шагов: ${plan.steps.length}`);
+    return {
+      steps: plan.steps.slice(0, 10),
+      success_criteria: Array.isArray(plan.success_criteria) ? plan.success_criteria.slice(0, 8) : [],
+      risks: Array.isArray(plan.risks) ? plan.risks.slice(0, 6) : [],
+    };
+  } catch (error) {
+    console.warn(`⚠️ Планировщик недоступен (${error.message}) — продолжаю без внешнего плана`);
+    return null;
+  }
+}
+
+/**
+ * Рецензия на готовый отчёт перед публикацией.
+ * Ошибка рецензента не блокирует публикацию: отчёт уходит как есть.
+ *
+ * @returns {Promise<{approved:boolean, remarks:string, checklist:Array}|null>}
+ */
+async function reviewResult({ taskTitle, finalText, steps, toolCalls }) {
+  try {
+    const review = await chatJson(
+      REVIEW_PROMPT,
+      `Задача: ${taskTitle}\n\nОтчёт агента:\n${toStr(finalText).slice(0, 12000)}\n\n` +
+        `Выполнено шагов: ${steps}, вызовов инструментов: ${toolCalls}.`,
+      { role: 'planner', timeout: 90000 }
+    );
+
+    const approved = review?.approved !== false;
+    const remarks = toStr(review?.remarks).trim();
+
+    console.log(`🔎 Рецензент: ${approved ? 'одобрено' : `НЕ одобрено — ${remarks.slice(0, 200)}`}`);
+
+    return {
+      approved,
+      remarks: approved ? '' : remarks,
+      checklist: Array.isArray(review?.checklist) ? review.checklist.slice(0, 10) : [],
+    };
+  } catch (error) {
+    console.warn(`⚠️ Рецензент недоступен (${error.message}) — публикую отчёт без рецензии`);
+    return null;
+  }
+}
+
 /**
  * Единая таблица вызова инструментов.
  * Чтобы добавить инструмент, достаточно одной записи здесь + объявления в tools.js.
@@ -57,6 +167,7 @@ ID задачи в YouGile: ${taskId}
 const TOOL_HANDLERS = {
   web_search: (args) => executors.webSearch(args.query),
   web_analysis: (args) => executors.webAnalysis(args.url, args.query),
+  analyze_image: (args) => executors.analyzeImage(args.url, args.question),
   save_result: (args, ctx) => executors.saveResult(args.taskId || ctx.taskId, args.step, args.data),
   update_task_status: (args, ctx) => executors.updateTaskStatus(args.taskId || ctx.taskId, args.status),
   add_comment: (args, ctx) => executors.addComment(args.taskId || ctx.taskId, args.text),
@@ -202,8 +313,14 @@ async function runAgent(taskId, taskTitle, taskDescription = '') {
     promptType: 'specialist',
   });
 
+  // Сильная модель составляет план ДО выполнения. Её отказ не блокирует задачу.
+  const plan = await planTask(taskId, taskTitle, taskDescription);
+
   const messages = [
-    { role: 'system', content: buildSystemPrompt(taskId, taskTitle, taskDescription, specialistPrompt) },
+    {
+      role: 'system',
+      content: buildSystemPrompt(taskId, taskTitle, taskDescription, specialistPrompt, plan),
+    },
     {
       role: 'user',
       content: `Задача: ${taskTitle}\n\nОписание: ${taskDescription || '(пусто)'}\n\nID задачи: ${taskId}\n\nНачни выполнение.`,
@@ -222,12 +339,26 @@ async function runAgent(taskId, taskTitle, taskDescription = '') {
     console.warn(`⚠️ Не удалось сохранить историю чата: ${error.message}`);
   });
 
+  // Рецензия сильного модели-рецензента перед публикацией отчёта заказчику
+  if (outcome.completed && outcome.text && outcome.text.trim()) {
+    outcome.review = await reviewResult({
+      taskTitle,
+      finalText: outcome.text,
+      steps: outcome.steps,
+      toolCalls: outcome.toolCalls,
+    });
+  }
+
   await db.updateAgentRun(runId, {
     completed: outcome.completed,
     steps: outcome.steps,
     toolCalls: outcome.toolCalls,
     error: outcome.error || null,
     resultLength: (outcome.text || '').length,
+    planned: Boolean(plan),
+    planSteps: plan ? plan.steps.length : 0,
+    reviewApproved: outcome.review ? outcome.review.approved : null,
+    reviewRemarks: outcome.review?.remarks || null,
   });
 
   return outcome;
@@ -286,4 +417,14 @@ ${chatContext}
   return outcome.text || 'Не удалось сформировать ответ.';
 }
 
-module.exports = { runAgent, runAgentForQuestion, agentLoop, TOOL_HANDLERS, buildSystemPrompt };
+module.exports = {
+  runAgent,
+  runAgentForQuestion,
+  agentLoop,
+  planTask,
+  reviewResult,
+  TOOL_HANDLERS,
+  buildSystemPrompt,
+  PLANNER_PROMPT,
+  REVIEW_PROMPT,
+};

@@ -675,6 +675,188 @@ async function main() {
   });
 
   /* ================================================================== */
+  console.log('\n— Роутинг трёх моделей —');
+  /* ================================================================== */
+
+  const glm = require('../lib/glm-client');
+
+  await test('роли моделей разрешаются независимо и переопределяются из окружения', () => {
+    assert.strictEqual(glm.modelFor('worker'), 'glm-4.5-flash');
+    assert.strictEqual(glm.modelFor('planner'), 'glm-4.7-flash');
+    assert.strictEqual(glm.modelFor('vision'), 'glm-4.6v-flash');
+    assert.strictEqual(glm.modelFor('unknown-role'), 'glm-4.5-flash', 'неизвестная роль должна идти на worker');
+
+    process.env.GLM_MODEL_PLANNER = 'glm-4.7';
+    delete require.cache[require.resolve('../lib/config')];
+    delete require.cache[require.resolve('../lib/glm-client')];
+    const fresh = require('../lib/glm-client');
+    try {
+      assert.strictEqual(fresh.modelFor('planner'), 'glm-4.7');
+      assert.strictEqual(fresh.modelFor('worker'), 'glm-4.5-flash', 'переопределение не должно трогать другие роли');
+    } finally {
+      delete process.env.GLM_MODEL_PLANNER;
+      delete require.cache[require.resolve('../lib/config')];
+      delete require.cache[require.resolve('../lib/glm-client')];
+    }
+  });
+
+  await test('детектор недоступности модели не срабатывает на обычных ошибках', () => {
+    assert.strictEqual(glm.isModelUnavailable({ status: 404, body: '' }), true);
+    assert.strictEqual(glm.isModelUnavailable({ status: 400, body: '{"error":"model not found"}' }), true);
+    assert.strictEqual(glm.isModelUnavailable({ status: 400, body: 'invalid arguments' }), false);
+    assert.strictEqual(glm.isModelUnavailable({ status: 429, body: 'rate limit' }), false);
+    assert.strictEqual(glm.isModelUnavailable({ status: 500, body: 'boom' }), false);
+  });
+
+  await test('при недоступной модели роли запрос прозрачно уходит на worker', async () => {
+    process.env.ZAI_API_KEY = 'test-key';
+    delete require.cache[require.resolve('../lib/config')];
+    delete require.cache[require.resolve('../lib/glm-client')];
+    const freshGlm = require('../lib/glm-client');
+
+    const bodies = [];
+    const originalFetch = global.fetch;
+    global.fetch = async (url, options) => {
+      const body = JSON.parse(options.body);
+      bodies.push(body.model);
+
+      if (bodies.length === 1) {
+        return {
+          ok: false,
+          status: 404,
+          headers: new Map(),
+          text: async () => '{"error":{"message":"model not found"}}',
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        headers: new Map(),
+        text: async () =>
+          JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'готово' } }], usage: {} }),
+      };
+    };
+
+    try {
+      const result = await freshGlm.chatCompletion({
+        role: 'vision',
+        messages: [{ role: 'user', content: 'посмотри картинку' }],
+      });
+
+      assert.strictEqual(bodies.length, 2, `запросов ${bodies.length}, ожидалось 2 (роль + фолбэк)`);
+      assert.strictEqual(bodies[0], 'glm-4.6v-flash', 'первый запрос должен идти на модель роли');
+      assert.strictEqual(bodies[1], 'glm-4.5-flash', 'второй запрос должен уйти на worker');
+      assert.strictEqual(result.message.content, 'готово');
+      assert.strictEqual(result.model, 'glm-4.5-flash', 'в результате должна быть фактическая модель');
+    } finally {
+      global.fetch = originalFetch;
+      delete require.cache[require.resolve('../lib/config')];
+      delete require.cache[require.resolve('../lib/glm-client')];
+    }
+  });
+
+  await test('analyze_image валидирует аргументы и не ходит в сеть на мусоре', async () => {
+    const executors = require('../tool-executors');
+
+    assert.strictEqual((await executors.analyzeImage('')).success, false);
+    assert.ok(/url/i.test((await executors.analyzeImage('')).error));
+    assert.strictEqual((await executors.analyzeImage('ftp://x/y.png')).success, false);
+    assert.strictEqual((await executors.analyzeImage('не ссылка')).success, false);
+  });
+
+  await test('analyze_image отклоняет ссылку на не-изображение с подсказкой про web_analysis', async () => {
+    const executors = require('../tool-executors');
+    const originalFetch = global.fetch;
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      headers: new Map([['content-type', 'text/html; charset=utf-8']]),
+    });
+
+    try {
+      const result = await executors.analyzeImage('https://example.com/page.html');
+      assert.strictEqual(result.success, false);
+      assert.ok(/web_analysis/.test(result.error), `нет подсказки про web_analysis: ${result.error}`);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  await test('analyze_image отклоняет изображение больше лимита', async () => {
+    const executors = require('../tool-executors');
+    const originalFetch = global.fetch;
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      headers: new Map([
+        ['content-type', 'image/png'],
+        ['content-length', String(20 * 1024 * 1024)],
+      ]),
+    });
+
+    try {
+      const result = await executors.analyzeImage('https://example.com/huge.png');
+      assert.strictEqual(result.success, false);
+      assert.ok(/8 МБ/.test(result.error), result.error);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  await test('planTask и reviewResult не роняют задачу, когда планировщик недоступен', async () => {
+    // Подменяем glm-client заглушкой, которая всегда падает
+    const glmPath = require.resolve('../lib/glm-client');
+    const original = require.cache[glmPath];
+    require.cache[glmPath] = {
+      id: glmPath,
+      filename: glmPath,
+      loaded: true,
+      exports: {
+        chatCompletion: async () => {
+          throw new Error('GLM 503: planner down');
+        },
+        chatJson: async () => {
+          throw new Error('GLM 503: planner down');
+        },
+        trimMessages: (m) => ({ messages: m, trimmed: 0 }),
+        modelFor: (role) => role,
+      },
+    };
+    delete require.cache[require.resolve('../ai-agent')];
+
+    try {
+      const agent = require('../ai-agent');
+      assert.strictEqual(await agent.planTask('t1', 'Задача', 'описание'), null, 'план должен деградировать в null');
+      assert.strictEqual(await agent.reviewResult({ taskTitle: 't', finalText: 'x' }), null, 'рецензия должна деградировать в null');
+
+      // План встраивается в промпт, а его отсутствие не ломает промпт
+      const withPlan = agent.buildSystemPrompt('t1', 'Задача', 'описание', '', {
+        steps: [{ title: 'Собрать цены', tools: ['web_search'], output: 'таблица' }],
+        success_criteria: ['таблица с 5 конкурентами'],
+        risks: ['цены могли измениться'],
+      });
+      assert.ok(withPlan.includes('ПЛАН, СОСТАВЛЕННЫЙ ПЛАНИРОВЩИКОМ'));
+      assert.ok(withPlan.includes('Собрать цены'));
+      assert.ok(withPlan.includes('таблица с 5 конкурентами'));
+
+      const withoutPlan = agent.buildSystemPrompt('t1', 'Задача', 'описание', '', null);
+      assert.ok(!withoutPlan.includes('ПЛАН, СОСТАВЛЕННЫЙ ПЛАНИРОВЩИКОМ'));
+      assert.ok(withoutPlan.includes('КОНТЕКСТ ЗАДАЧИ'), 'базовые секции промпта не должны теряться');
+    } finally {
+      if (original) require.cache[glmPath] = original;
+      else delete require.cache[glmPath];
+      delete require.cache[require.resolve('../ai-agent')];
+    }
+  });
+
+  await test('analyze_image объявлен в tools и реализован в агенте', () => {
+    const names = tools.map((t) => t.function.name);
+    assert.ok(names.includes('analyze_image'));
+    const { TOOL_HANDLERS } = require('../ai-agent');
+    assert.strictEqual(typeof TOOL_HANDLERS.analyze_image, 'function');
+  });
+
+  /* ================================================================== */
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${'='.repeat(60)}`);

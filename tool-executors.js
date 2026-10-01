@@ -15,7 +15,9 @@
 //  • временные файлы удаляются гарантированно (try/finally).
 
 const fs = require('fs/promises');
+const path = require('path');
 
+const { fetchWithTimeout } = require('./lib/http');
 const db = require('./db');
 const cloud = require('./lib/cloud');
 const yougile = require('./lib/yougile-client');
@@ -202,6 +204,130 @@ async function finishAnalysis({ url, source, title, description, headings, wordC
   }
 
   return result;
+}
+
+/* ------------------------------------------------------------------ */
+// analyze_image (мультимодальная модель)
+/* ------------------------------------------------------------------ */
+
+const IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.svg'];
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Анализ изображения мультимодальной моделью (GLM-4.6V-Flash по умолчанию).
+ *
+ * Зачем: визуальная проверка опубликованной страницы (скриншот), разбор
+ * прайс-листов и таблиц, присланных картинкой или сканом, извлечение данных
+ * с диаграмм. Текстовая модель этого не видит вовсе.
+ *
+ * @param {string} url
+ * @param {string} [question]
+ */
+async function analyzeImage(url, question = '') {
+  const target = toStr(url).trim();
+  if (!target) return { success: false, error: 'Не передан параметр url.' };
+
+  let parsed;
+  try {
+    parsed = new URL(target);
+  } catch {
+    return { success: false, error: `Некорректный URL: ${target}` };
+  }
+
+  if (!/^https?:$/.test(parsed.protocol)) {
+    return { success: false, error: `Поддерживаются только http(s) ссылки, получено: ${parsed.protocol}` };
+  }
+
+  const normalizedQuestion = toStr(question).trim();
+  console.log(`🖼️ Анализ изображения: ${parsed.href.slice(0, 100)}`);
+
+  try {
+    // Предпроверка: ссылка живая, это изображение и оно не гигантское.
+    // Мультимодальная модель тянет картинку сама, но битая ссылка превратилась бы
+    // в невнятную ошибку модели — лучше поймать её здесь и сообщить внятно.
+    const probe = await fetchWithTimeout(
+      parsed.toString(),
+      { method: 'HEAD', headers: { 'User-Agent': 'YouGileAIAgent/1.1' } },
+      { timeout: 15000 }
+    );
+
+    const contentType = probe.headers.get('content-type') || '';
+    const contentLength = Number(probe.headers.get('content-length') || 0);
+    const extension = path.extname(parsed.pathname).toLowerCase();
+
+    const looksLikeImage =
+      contentType.startsWith('image/') || IMAGE_EXTENSIONS.includes(extension);
+
+    if (probe.ok && !looksLikeImage && !contentType.includes('octet-stream')) {
+      return {
+        success: false,
+        url: parsed.href,
+        error: `Ссылка ведёт не на изображение, а на ${contentType || 'неизвестный тип'}. ` +
+          'Для анализа веб-страниц используй web_analysis, для изображений — прямую ссылку на картинку.',
+      };
+    }
+
+    if (contentLength > MAX_IMAGE_BYTES) {
+      return {
+        success: false,
+        url: parsed.href,
+        error: `Изображение ${(contentLength / 1024 / 1024).toFixed(1)} МБ — больше лимита 8 МБ.`,
+      };
+    }
+
+    const { chatCompletion } = require('./lib/glm-client');
+
+    const instruction = normalizedQuestion
+      ? `Ответь строго по изображению на вопрос: ${normalizedQuestion}\n` +
+        'Верни JSON: {"answer": "развёрнутый ответ", "facts": ["факт 1", "факт 2"], "confidence": "high|medium|low"}'
+      : 'Опиши содержимое изображения и извлеки из него все полезные данные ' +
+        '(текст, цифры, таблицы, элементы интерфейса). Верни JSON: ' +
+        '{"description": "описание", "facts": ["факт 1"], "extracted_text": "текст с изображения"}';
+
+    const { message, model } = await chatCompletion({
+      role: 'vision',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Ты анализируешь изображения для бизнес-задач. Описывай только то, что реально видишь. ' +
+            'Если данных на изображении нет — прямо скажи об этом, не выдумывай.',
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: instruction },
+            { type: 'image_url', image_url: { url: parsed.href } },
+          ],
+        },
+      ],
+      timeout: 90000,
+    });
+
+    const raw = toStr(message.content);
+    let structured = null;
+    try {
+      const match = raw.match(/\{[\s\S]*\}/);
+      structured = match ? JSON.parse(match[0]) : null;
+    } catch {
+      structured = null;
+    }
+
+    return {
+      success: true,
+      url: parsed.href,
+      model,
+      question: normalizedQuestion || null,
+      answer: structured?.answer || structured?.description || raw,
+      facts: Array.isArray(structured?.facts) ? structured.facts.slice(0, 20) : [],
+      extractedText: structured?.extracted_text || null,
+      confidence: structured?.confidence || null,
+      raw: structured ? undefined : raw.slice(0, 4000),
+    };
+  } catch (error) {
+    console.error(`❌ analyzeImage: ${error.message}`);
+    return { success: false, url: parsed.href, error: error.message };
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -447,6 +573,7 @@ async function getProviderStatus() {
 module.exports = {
   webSearch,
   webAnalysis,
+  analyzeImage,
   createDocument,
   saveResult,
   updateTaskStatus,

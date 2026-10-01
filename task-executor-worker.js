@@ -44,12 +44,32 @@ async function executeTask(task) {
     const outcome = await runAgent(taskId, title, task.description || '');
 
     if (outcome.completed && outcome.text && outcome.text.trim()) {
-      await executors.addComment(taskId, `✅ Задача выполнена:\n\n${outcome.text}`).catch(() => {});
+      // Рецензент (сильная модель) проверил отчёт до публикации. Если он не
+      // одобрил результат — замечания уходят в комментарий рядом с отчётом,
+      // чтобы заказчик видел их, а не только итоговый текст.
+      const reviewNote =
+        outcome.review && !outcome.review.approved && outcome.review.remarks
+          ? `\n\n⚠️ <b>Замечания рецензента:</b> ${outcome.review.remarks}`
+          : '';
+
+      await executors
+        .addComment(taskId, `✅ Задача выполнена:\n\n${outcome.text}${reviewNote}`)
+        .catch(() => {});
       await yougile.setStatus(taskId, 'Готово').catch((error) => {
         console.warn(`⚠️ Не удалось перевести в «Готово»: ${error.message}`);
       });
       await db.finishTaskRun(taskId, 'done', { title });
-      await notify.taskDone({ title, taskId, summary: outcome.text }).catch(() => {});
+      await notify
+        .taskDone({
+          title,
+          taskId,
+          summary:
+            outcome.text +
+            (outcome.review && !outcome.review.approved
+              ? `\n\n⚠️ Рецензент оставил замечания — см. комментарий к задаче.`
+              : ''),
+        })
+        .catch(() => {});
       console.log(`✅ Задача ${taskId} выполнена за ${outcome.steps} шагов`);
       return;
     }
