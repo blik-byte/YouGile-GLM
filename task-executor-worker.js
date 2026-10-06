@@ -14,6 +14,7 @@
 //  M27 — задачи читаются с пагинацией, а не только первой страницей.
 
 const { runAgent } = require('./ai-agent');
+const workflows = require('./lib/workflows');
 const executors = require('./tool-executors');
 const db = require('./db');
 const yougile = require('./lib/yougile-client');
@@ -40,6 +41,26 @@ async function executeTask(task) {
     });
 
     await executors.addComment(taskId, '🤖 AI-агент начал выполнение задачи...').catch(() => {});
+
+    // Согласованный конвейер идёт жёстким маршрутом, а не свободной импровизацией
+    // модели: черновики семантики и страницы создаются детерминированными
+    // сценариями lib/workflows.js. Свободному агенту отдаётся всё остальное.
+    const workflow = await workflows.runDetectedWorkflow(taskId, title, task.description || '');
+
+    if (workflow) {
+      await executors.addComment(taskId, workflow.summary).catch(() => {});
+
+      if (workflow.ok) {
+        await yougile.setStatus(taskId, 'Готово').catch(() => {});
+        await db.finishTaskRun(taskId, 'done', { title, workflow: true });
+        await notify.taskDone({ title, taskId, summary: workflow.summary }).catch(() => {});
+      } else {
+        await yougile.setStatus(taskId, 'Ошибка').catch(() => {});
+        await db.finishTaskRun(taskId, 'error', { title, error: workflow.summary });
+        await notify.taskError({ title, taskId, error: workflow.summary }).catch(() => {});
+      }
+      return;
+    }
 
     const outcome = await runAgent(taskId, title, task.description || '');
 

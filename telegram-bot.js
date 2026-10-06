@@ -214,6 +214,7 @@ const HELP_TEXT =
   `/approve <id> — разрешить заявленное действие\n` +
   `/deny <id> — отклонить заявку\n` +
   `/modx — состояние коннектора публикации MODX\n` +
+  'Пришли .xlsx с частотностями (в подписи id черновика) — импортирую в черновик\n' +
   `/allow &lt;chatId&gt; — разрешить доступ\n` +
   `/deny &lt;chatId&gt; — запретить доступ\n` +
   `/help — эта справка\n\n` +
@@ -574,6 +575,74 @@ function registerHandlers() {
       await safeSendMessage(chatId, lines.join('\n'));
     } catch (error) {
       await safeSendMessage(chatId, `❌ Ошибка получения статуса: ${escapeTelegram(error.message)}`);
+    }
+  });
+
+  // Файл .xlsx в чат — импорт частотностей владельца в черновик семантики.
+  // Id черновика берётся из подписи; если его нет — последний ожидающий черновик.
+  bot.on('message', async (msg) => {
+    if (!msg.document) return;
+
+    const chatId = String(msg.chat.id);
+    if (!(await resolveAccess(chatId)).allowed) return handleUnauthorized(msg);
+
+    const fileName = toStr(msg.document.file_name);
+    const mime = toStr(msg.document.mime_type);
+    const caption = toStr(msg.caption);
+
+    if (!/\.xlsx$/i.test(fileName) && !/spreadsheet|xlsx/i.test(mime)) {
+      return safeSendMessage(
+        chatId,
+        `Принимаю только файлы .xlsx с частотностями. Получил: ${escapeTelegram(fileName || mime || 'файл')}`
+      );
+    }
+
+    try {
+      const semantics = require('./lib/semantics');
+      let draftId = (caption.match(/\b([a-f0-9]{8})\b/i) || [])[1];
+
+      if (!draftId) {
+        const drafts = await semantics.listDrafts(5);
+        for (const draft of drafts) {
+          if ((await semantics.draftStatus(draft)) === 'pending') {
+            draftId = draft.id;
+            break;
+          }
+        }
+      }
+
+      if (!draftId) {
+        return safeSendMessage(
+          chatId,
+          'Не нашёл черновик семантики, к которому отнести частотности. ' +
+            'Укажи id черновика в подписи к файлу: 8 символов, например «частотности к 1a2b3c4d».'
+        );
+      }
+
+      await safeSendMessage(chatId, `📥 Принял файл ${escapeTelegram(fileName)}, читаю частотности...`);
+
+      const file = await bot.getFile(msg.document.file_id);
+      const link = await bot.getFileLink(file.file_path);
+      const response = await fetch(link);
+      const buffer = Buffer.from(await response.arrayBuffer());
+
+      const result = await semantics.mergeOwnerFrequencies(draftId, buffer);
+
+      if (!result.success) {
+        return safeSendMessage(chatId, `❌ Не удалось импортировать частотности: ${escapeTelegram(result.error)}`);
+      }
+
+      await safeSendMessage(
+        chatId,
+        `✅ Частотности импортированы в черновик <code>${escapeTelegram(draftId)}</code>:\n` +
+          `обновлено запросов: ${result.updated}\nдобавлено новых: ${result.added}\n` +
+          `групп в файле: ${result.groups}` +
+          (result.unmatchedGroups.length ? `\n⚠️ пустые группы: ${escapeTelegram(result.unmatchedGroups.join(', '))}` : '') +
+          '\n\nЧерновик с твоими частотностями готов к одобрению: команда /approve и id заявки ' +
+          'придут в уведомлении о заявке (или посмотри /approvals).'
+      );
+    } catch (error) {
+      await safeSendMessage(chatId, `❌ Ошибка импорта файла: ${escapeTelegram(error.message)}`);
     }
   });
 

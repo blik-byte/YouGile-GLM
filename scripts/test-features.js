@@ -1249,7 +1249,7 @@ async function main() {
       },
     };
     for (const key of Object.keys(require.cache)) {
-      if (/(lib[\\/])?(semantics|approvals)\.js$/.test(key) || /(^|[\\/])tool-executors\.js$/.test(key)) delete require.cache[key];
+      if (/(lib[\\/])?(semantics|approvals|workflows)\.js$/.test(key) || /(^|[\\/])tool-executors\.js$/.test(key)) delete require.cache[key];
     }
 
     try {
@@ -1258,7 +1258,7 @@ async function main() {
       if (originalDb) require.cache[dbPath] = originalDb; else delete require.cache[dbPath];
       if (originalKw) require.cache[kwPath] = originalKw; else delete require.cache[kwPath];
       for (const key of Object.keys(require.cache)) {
-        if (/(lib[\\/])?(semantics|approvals)\.js$/.test(key) || /(^|[\\/])tool-executors\.js$/.test(key)) delete require.cache[key];
+        if (/(lib[\\/])?(semantics|approvals|workflows)\.js$/.test(key) || /(^|[\\/])tool-executors\.js$/.test(key)) delete require.cache[key];
       }
     }
   }
@@ -1529,6 +1529,137 @@ async function main() {
     assert.ok(tool, 'инструмент не объявлен');
     assert.deepStrictEqual(tool.function.parameters.required, ['draftId', 'cluster']);
     assert.ok(tool.function.description.includes('published=0'), 'в описании нет гарантии черновика');
+  });
+
+  /* ================================================================== */
+  console.log('\n— Маршрутизация конвейера и импорт частотностей —');
+  /* ================================================================== */
+
+  await test('фраза владельца маршрутизируется в сценарий семантики, а не свободному агенту', () => {
+    const workflows = require('../lib/workflows');
+    assert.strictEqual(
+      workflows.detectWorkflow('Собери черновик семантики по группе seo-wordpress'),
+      'semantics',
+      'именно эта фраза раньше уходила свободному агенту и давала плагины вместо каталога'
+    );
+    assert.strictEqual(workflows.detectWorkflow('собери семантику по группе Интернет-магазины'), 'semantics');
+    assert.strictEqual(
+      workflows.detectWorkflow('создай страницу по черновику 1a2b3c4d, кластер "продвижение сайта на вордпресс"'),
+      'page'
+    );
+    assert.strictEqual(workflows.detectWorkflow('Проведи SEO-аудит сайта example.ru'), null, 'обычные задачи должны идти агенту');
+    assert.strictEqual(workflows.detectWorkflow('сравни цены конкурентов'), null);
+  });
+
+  await test('detectGroup находит группу по id, названию и подкатегории', () => {
+    const workflows = require('../lib/workflows');
+    assert.strictEqual(workflows.detectGroup('по группе seo-wordpress').id, 'seo-wordpress');
+    assert.strictEqual(workflows.detectGroup('Собери черновик семантики по группе SEO WordPress').id, 'seo-wordpress');
+    assert.strictEqual(workflows.detectGroup('семантика по группе Интернет-магазины').id, 'internet-magaziny');
+    assert.strictEqual(workflows.detectGroup('продвижение: ветеринарная клиника').id, 'uslugi');
+    assert.strictEqual(workflows.detectGroup('что-то совсем постороннее'), null);
+    // Исключённая владельцем группа не находится
+    assert.strictEqual(workflows.detectGroup('по группе seo-modx'), null);
+  });
+
+  await test('parsePageRequest вытаскивает id черновика, кластер и тип', () => {
+    const workflows = require('../lib/workflows');
+    const parsed = workflows.parsePageRequest(
+      'Создай страницу по черновику AB12CD34, кластер «продвижение сайта на вордпресс», тип promo'
+    );
+    assert.strictEqual(parsed.draftId, 'ab12cd34');
+    assert.strictEqual(parsed.cluster, 'продвижение сайта на вордпресс');
+    assert.strictEqual(parsed.kind, 'promo');
+
+    const article = workflows.parsePageRequest('создай статью по черновику 11111111, кластер "seo для tilda"');
+    assert.strictEqual(article.kind, 'article');
+  });
+
+  await test('runSemanticsWorkflow строит черновик ИЗ КАТАЛОГА с запросами владельца', async () => {
+    await withSemanticsStubs(async () => {
+      const workflows = require('../lib/workflows');
+      const result = await workflows.runSemanticsWorkflow('task-1', 'Собери черновик семантики по группе seo-wordpress');
+
+      assert.strictEqual(result.ok, true, result.summary);
+      assert.ok(result.draftId, 'нет id черновика');
+      assert.ok(result.approvalId, 'нет заявки на согласование');
+
+      // В сводке обязаны быть запросы ВЛАДЕЛЬЦА из каталога, а не подсказочные плагины
+      assert.ok(/wordpress seo|сео вордпресс/i.test(result.summary), `в сводке нет запросов владельца: ${result.summary.slice(0, 200)}`);
+      assert.ok(!/hostgator|plugin free/i.test(result.summary), 'сводка построена на подсказочном мусоре');
+      assert.ok(/Запросов владельца/.test(result.summary), 'нет счётчика запросов владельца');
+      assert.ok(/\/approve/.test(result.summary), 'в сводке нет команды одобрения');
+      // Файл создать нечем (облако в заглушке отсутствует) — но это честная строка, а не молчание
+      assert.ok(/Файл черновика/.test(result.summary), 'нет строки про файл черновика');
+    });
+  });
+
+  await test('runSemanticsWorkflow без указания группы объясняет, какие группы есть', async () => {
+    await withSemanticsStubs(async () => {
+      const workflows = require('../lib/workflows');
+      const result = await workflows.runSemanticsWorkflow('task-1', 'Собери черновик семантики');
+      assert.strictEqual(result.ok, false);
+      assert.ok(/seo-wordpress/.test(result.summary), 'в подсказке нет списка доступных групп');
+    });
+  });
+
+  await test('mergeOwnerFrequencies: частотности владельца перезаписывают кандидатов', async () => {
+    await withSemanticsStubs(async () => {
+      const semantics = require('../lib/semantics');
+      const draft = await semantics.buildDraft({ groups: 'seo-wordpress' });
+
+      // Файл в формате владельца: группа + запрос|частотность|W
+      const ExcelJS = require('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Лист1');
+      sheet.addRow(['Группа: SEO WordPress', 'Частотность', '«W»']);
+      const existing = draft.groups[0].queries.find((q) => q.freqSource === 'owner');
+      const candidate = draft.groups[0].queries.find((q) => q.freqSource === 'suggest');
+      sheet.addRow([existing.q, 999, 5]);
+      if (candidate) sheet.addRow([candidate.q, 123, 1]);
+      sheet.addRow(['совершенно новый запрос владельца', 77, 2]);
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      const result = await semantics.mergeOwnerFrequencies(draft.id, Buffer.from(buffer));
+      assert.strictEqual(result.success, true, result.error);
+      assert.ok(result.updated >= 1, 'ничего не обновлено');
+      assert.ok(result.added >= 1, 'новый запрос не добавлен');
+
+      const updatedDraft = await semantics.getDraft(draft.id);
+      const refreshed = updatedDraft.groups[0].queries.find((q) => q.q === existing.q);
+      assert.strictEqual(refreshed.freq, 999, 'частотность владельца не перезаписала старую');
+      assert.strictEqual(refreshed.freqSource, 'owner');
+
+      if (candidate) {
+        const promoted = updatedDraft.groups[0].queries.find((q) => q.q === candidate.q);
+        assert.strictEqual(promoted.freqSource, 'owner', 'кандидат с частотностью должен стать owner-запросом');
+        assert.strictEqual(promoted.freq, 123);
+      }
+
+      const newcomer = updatedDraft.groups[0].queries.find((q) => q.q === 'совершенно новый запрос владельца');
+      assert.ok(newcomer, 'новый запрос не попал в черновик');
+      assert.strictEqual(newcomer.freqSource, 'owner');
+    });
+  });
+
+  await test('mergeOwnerFrequencies блокируется после одобрения черновика', async () => {
+    await withSemanticsStubs(async () => {
+      const semantics = require('../lib/semantics');
+      const approvals = require('../lib/approvals');
+      const draft = await semantics.buildDraft({ groups: 'seo-tilda' });
+      await approvals.decide(draft.approvalId, 'approved', 'owner');
+
+      const ExcelJS = require('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Лист1');
+      sheet.addRow(['Группа: SEO Tilda', 'Частотность', '«W»']);
+      sheet.addRow(['tilda seo', 500, 3]);
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      const result = await semantics.mergeOwnerFrequencies(draft.id, Buffer.from(buffer));
+      assert.strictEqual(result.success, false);
+      assert.ok(/одобрен/i.test(result.error), result.error);
+    });
   });
 
   /* ================================================================== */
