@@ -1642,6 +1642,30 @@ async function main() {
     });
   });
 
+  await test('parseCaptionReference понимает id черновика и uuid задачи', async () => {
+    await withSemanticsStubs(async () => {
+      const semantics = require('../lib/semantics');
+
+      assert.deepStrictEqual(semantics.parseCaptionReference('частотности к 1a2b3c4d'), {
+        draftId: '1a2b3c4d',
+        taskUuid: null,
+      });
+      assert.deepStrictEqual(
+        semantics.parseCaptionReference('Частотность к 52b86982-3bf2-4d29-b193-c1151ebb68fd'),
+        { draftId: null, taskUuid: '52b86982-3bf2-4d29-b193-c1151ebb68fd' }
+      );
+      assert.deepStrictEqual(semantics.parseCaptionReference(''), { draftId: null, taskUuid: null });
+      assert.deepStrictEqual(semantics.parseCaptionReference('просто файл'), { draftId: null, taskUuid: null });
+
+      // uuid задачи находит её черновик
+      const draft = await semantics.buildDraft({ groups: 'seo-tilda', taskId: 'aaaa1111-2222-3333-4444-555566667777' });
+      assert.ok(draft.success, draft.error);
+      const found = await semantics.findDraftByTaskId('aaaa1111-2222-3333-4444-555566667777');
+      assert.strictEqual(found.id, draft.id);
+      assert.strictEqual(await semantics.findDraftByTaskId('bbbb1111-2222-3333-4444-555566667777'), null);
+    });
+  });
+
   await test('mergeOwnerFrequencies блокируется после одобрения черновика', async () => {
     await withSemanticsStubs(async () => {
       const semantics = require('../lib/semantics');

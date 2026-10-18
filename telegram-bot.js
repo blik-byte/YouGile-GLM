@@ -634,7 +634,16 @@ function registerHandlers() {
 
     try {
       const semantics = require('./lib/semantics');
-      let draftId = (caption.match(/\b([a-f0-9]{8})\b/i) || [])[1];
+
+      // В подписи может быть id черновика (8 hex) или id задачи YouGile (uuid):
+      // владелец естественно копирует тот id, который видел последним
+      const reference = semantics.parseCaptionReference(caption);
+      let draftId = reference.draftId;
+
+      if (!draftId && reference.taskUuid) {
+        const byTask = await semantics.findDraftByTaskId(reference.taskUuid);
+        draftId = byTask ? byTask.id : null;
+      }
 
       if (!draftId) {
         const drafts = await semantics.listDrafts(5);
@@ -649,8 +658,11 @@ function registerHandlers() {
       if (!draftId) {
         return safeSendMessage(
           chatId,
-          'Не нашёл черновик семантики, к которому отнести частотности. ' +
-            'Укажи id черновика в подписи к файлу: 8 символов, например «частотности к 1a2b3c4d».'
+          'Не нашёл черновик семантики, к которому отнести частотности.\n' +
+            'Черновик появляется через минуту после того, как задача конвейера выполнена ' +
+            '(задачи конвейера теперь сами уходят в «К выполнению», переносить руками не нужно).\n' +
+            'Посмотри список: /drafts. В подписи к файлу можно указать id черновика (8 символов) ' +
+            'или id задачи YouGile целиком.'
         );
       }
 
@@ -689,13 +701,29 @@ function registerHandlers() {
     const chatId = String(msg.chat.id);
     if (!(await resolveAccess(chatId)).allowed) return handleUnauthorized(msg);
 
+    // «Частотности к …» без приложенного файла — это не задача, а попытка
+    // импорта: объясняем формат вместо создания бесполезной задачи
+    if (/частотност|частоты\s+к/i.test(msg.text) && !msg.document) {
+      return safeSendMessage(
+        chatId,
+        'Чтобы залить частотности, пришли сам файл .xlsx сообщением с подписью или без.\n' +
+          'Без подписи частотности уйдут в последний черновик, ожидающий одобрения.\n' +
+          'В подписи можно указать id черновика (8 символов, см. /drafts) ' +
+          'или id задачи YouGile целиком — пойму оба варианта.'
+      );
+    }
+
     await safeSendMessage(chatId, '🤖 Создаю задачу из твоего сообщения...');
 
     try {
       const task = await createTaskFromText(msg.text);
       await safeSendMessage(
         chatId,
-        `✅ <b>Задача создана!</b>\n\n🆔 <code>${escapeTelegram(task.id)}</code>\n📝 ${escapeTelegram(task.title)}`
+        `✅ <b>Задача создана!</b>\n\n🆔 <code>${escapeTelegram(task.id)}</code>\n📝 ${escapeTelegram(task.title)}` +
+          (task.autoQueued
+            ? '\n\n⚙️ Распознан сценарий конвейера: задача уже поставлена в «К выполнению», ' +
+              'переносить вручную не нужно. Результат придёт комментарием в задачу и сюда.'
+            : '')
       );
     } catch (error) {
       await safeSendMessage(chatId, `❌ Ошибка: ${escapeTelegram(error.message)}`);
@@ -707,14 +735,34 @@ function registerHandlers() {
  * Создание задачи в YouGile из произвольного текста пользователя.
  * Вынесено из двух одинаковых блоков (/task и обработчик сообщений).
  */
+/**
+ * Создание задачи из текста.
+ * Задачи согласованного конвейера («собери черновик семантики…», «создай страницу
+ * по черновику…») ставятся СРАЗУ в колонку «К выполнению»: им не нужно ручное
+ * перемещение в веб-интерфейсе, исполнитель подхватит их за 30 секунд.
+ * Прочие задачи идут в колонку по умолчанию, как раньше.
+ */
 async function createTaskFromText(text) {
   const { createYougileTask } = require('./email-worker');
-  return createYougileTask({
-    title: String(text).slice(0, 100),
-    can_execute: true,
-    execution_plan: ['Проанализировать запрос', 'Выполнить необходимые действия', 'Сохранить результат'],
-    tools_needed: ['web_search', 'web_analysis'],
-  });
+  const workflows = require('./lib/workflows');
+  const { config } = require('./lib/config');
+
+  const isWorkflow = workflows.detectWorkflow(String(text)) !== null;
+  const columnId = isWorkflow && config.columnToExecute ? config.columnToExecute : undefined;
+
+  const task = await createYougileTask(
+    {
+      title: String(text).slice(0, 100),
+      can_execute: true,
+      execution_plan: isWorkflow
+        ? ['Выполнить сценарий конвейера', 'Отчитаться комментарием и заявкой на согласование']
+        : ['Проанализировать запрос', 'Выполнить необходимые действия', 'Сохранить результат'],
+      tools_needed: ['web_search', 'web_analysis'],
+    },
+    columnId
+  );
+
+  return { ...task, autoQueued: isWorkflow };
 }
 
 /* ------------------------------------------------------------------ */
