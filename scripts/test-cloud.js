@@ -185,6 +185,39 @@ async function main() {
     assert.strictEqual(cloud.isConfigured(), true);
   });
 
+  await test('cloud: явно заданный, но не настроенный провайдер откатывается на auto', () => {
+    setEnv({
+      R2_ACCOUNT_ID: 'acc', R2_ACCESS_KEY_ID: 'id',
+      R2_SECRET_ACCESS_KEY: null, R2_BUCKET: null,
+      PCLOUD_AUTH_TOKEN: null,
+      MONGODB_URI: 'mongodb://localhost:27017',
+      CLOUD_PROVIDER: 'r2',
+    });
+    const cloud = require('../lib/cloud');
+    // R2 указан явно, но секрета и бакета нет — документы не должны погибать
+    assert.strictEqual(cloud.resolveProvider(), 'mongo');
+    setEnv({
+      R2_ACCOUNT_ID: null, R2_ACCESS_KEY_ID: null,
+      MONGODB_URI: null, CLOUD_PROVIDER: null,
+    });
+  });
+
+  await test('cloud: настроенный явно провайдер уважается', () => {
+    setEnv({
+      R2_ACCOUNT_ID: 'acc', R2_ACCESS_KEY_ID: 'id',
+      R2_SECRET_ACCESS_KEY: 'secret', R2_BUCKET: 'bucket',
+      MONGODB_URI: 'mongodb://localhost:27017',
+      CLOUD_PROVIDER: 'r2',
+    });
+    const cloud = require('../lib/cloud');
+    assert.strictEqual(cloud.resolveProvider(), 'r2');
+    setEnv({
+      R2_ACCOUNT_ID: null, R2_ACCESS_KEY_ID: null,
+      R2_SECRET_ACCESS_KEY: null, R2_BUCKET: null,
+      MONGODB_URI: null, CLOUD_PROVIDER: null,
+    });
+  });
+
   await test('cloud: auto выбирает pCloud, если R2 не настроен', () => {
     setEnv({
       R2_ACCOUNT_ID: null,
@@ -209,10 +242,15 @@ async function main() {
     assert.ok(/R2_ACCOUNT_ID/.test(result.error), `нет списка нужных переменных: ${result.error}`);
   });
 
-  await test('cloud: явный CLOUD_PROVIDER=r2 при ненастроенном R2 не падает молча', async () => {
-    setEnv({ CLOUD_PROVIDER: 'r2', PCLOUD_AUTH_TOKEN: 'pcloud-token' });
+  await test('cloud: явный CLOUD_PROVIDER=r2 при ненастроенном R2 откатывается, ошибка понятная', async () => {
+    setEnv({
+      CLOUD_PROVIDER: 'r2', PCLOUD_AUTH_TOKEN: null, MONGODB_URI: null,
+      R2_ACCOUNT_ID: null, R2_ACCESS_KEY_ID: null,
+      R2_SECRET_ACCESS_KEY: null, R2_BUCKET: null,
+    });
     const cloud = require('../lib/cloud');
-    assert.strictEqual(cloud.resolveProvider(), 'r2');
+    // Ничего рабочего в цепочке нет — честно 'none', но без молчаливой гибели
+    assert.strictEqual(cloud.resolveProvider(), 'none');
 
     const tmp = path.join(os.tmpdir(), `cloud-test-${Date.now()}.txt`);
     fs.writeFileSync(tmp, 'данные');
