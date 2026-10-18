@@ -58,5 +58,25 @@ for (const file of files) {
   }
 }
 
+// Файлы рабочих данных обязаны быть в git: на Render локальных копий нет.
+// Именно этот класс бага один раз уже уехал в прод пустым (data/ из .gitignore).
+try {
+  const { execFileSync } = require('child_process');
+  const tracked = execFileSync('git', ['ls-files', 'catalog/'], { cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'] })
+    .toString()
+    .trim()
+    .split('\n')
+    .filter(Boolean);
+
+  if (fs.existsSync(path.join(ROOT, 'catalog', 'semantics-catalog.json')) && !tracked.includes('catalog/semantics-catalog.json')) {
+    failed++;
+    console.log('  ❌ catalog/semantics-catalog.json существует, но НЕ отслеживается git (проверь .gitignore)');
+  } else if (tracked.length > 0) {
+    console.log(`  ✅ рабочие данные в git: ${tracked.join(', ')}`);
+  }
+} catch {
+  // вне git-репозитория проверка не применяется
+}
+
 console.log(failed === 0 ? '\n✅ Все проверки пройдены' : `\n❌ Проблем: ${failed}`);
 process.exit(failed === 0 ? 0 : 1);

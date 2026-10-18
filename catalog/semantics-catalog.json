@@ -1,0 +1,572 @@
+{
+  "version": 1,
+  "updatedAt": "2026-10-01T15:24:15.501310+00:00",
+  "source": "каталог владельца: разделы по типам сайтов, подкатегории и CMS-группы с частотностями из расширения",
+  "sections": [
+    {
+      "id": "site-types",
+      "title": "Продвижение по типам сайтов",
+      "groups": [
+        {
+          "id": "internet-magaziny",
+          "title": "Интернет-магазины",
+          "subcategories": [
+            "ювелирные",
+            "детские товары",
+            "детская одежда",
+            "игрушек",
+            "мебель, мебельный",
+            "одежда, обувь",
+            "косметики",
+            "цветочный, цветов",
+            "нижнего белья",
+            "подарков, сувениров",
+            "оптовый",
+            "бытовая техника",
+            "ковров"
+          ],
+          "queries": []
+        },
+        {
+          "id": "uslugi",
+          "title": "Сайт услуг",
+          "subcategories": [
+            "детской школы",
+            "детского лагеря",
+            "детских центров",
+            "детских секций",
+            "b2b",
+            "фитнес клуб, услуг, зала, центр, студия",
+            "ветеринарная клиника, ветклиника",
+            "питомник, заводчиков",
+            "полиграфия, типографии, печати"
+          ],
+          "queries": []
+        },
+        {
+          "id": "avtomobilnye",
+          "title": "Автомобильные",
+          "subcategories": [
+            "автосалон",
+            "автомобильный",
+            "автосервис, сто",
+            "автозапчасти, запчастей"
+          ],
+          "queries": []
+        },
+        {
+          "id": "stroitelstvo-i-nedvizhimost",
+          "title": "Строительство и недвижимость",
+          "subcategories": [
+            "строительный",
+            "недвижимость"
+          ],
+          "queries": []
+        },
+        {
+          "id": "pravo-i-finansy",
+          "title": "Право и финансы",
+          "subcategories": [
+            "бухгалтерские услуги",
+            "адвокатский",
+            "банк",
+            "юридический",
+            "финансовых компаний, услуг",
+            "консалтинг, консалтинговый",
+            "страховой",
+            "бизнес"
+          ],
+          "queries": []
+        },
+        {
+          "id": "otdyh-i-turizm",
+          "title": "Отдых и туризм",
+          "subcategories": [
+            "гостиницы",
+            "отель",
+            "база отдыха",
+            "сайт туризма, seo туризма",
+            "кафе, ресторан"
+          ],
+          "queries": []
+        }
+      ]
+    },
+    {
+      "id": "site-types-top",
+      "title": "Типы сайтов (верхний уровень, без подкатегорий)",
+      "groups": [
+        {
+          "id": "korporativnye",
+          "title": "Корпоративные сайты",
+          "subcategories": [],
+          "queries": []
+        },
+        {
+          "id": "sait-vizitka",
+          "title": "Сайт-визитка",
+          "subcategories": [],
+          "queries": []
+        },
+        {
+          "id": "lending",
+          "title": "Лендинг",
+          "subcategories": [],
+          "queries": []
+        },
+        {
+          "id": "novyy-sayt",
+          "title": "Новый (молодой) сайт",
+          "subcategories": [],
+          "queries": []
+        }
+      ]
+    },
+    {
+      "id": "cms",
+      "title": "Продвижение по движкам (CMS)",
+      "groups": [
+        {
+          "id": "seo-wordpress",
+          "title": "SEO WordPress",
+          "queries": [
+            {
+              "q": "wordpress seo",
+              "freq": 314,
+              "w": 20,
+              "freqSource": "owner"
+            },
+            {
+              "q": "сео вордпресс",
+              "freq": 84,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "оптимизация wordpress",
+              "freq": 82,
+              "w": 2,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo вордпресс",
+              "freq": 69,
+              "w": 2,
+              "freqSource": "owner"
+            },
+            {
+              "q": "оптимизация вордпресс",
+              "freq": 46,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo сайта wordpress",
+              "freq": 44,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "wordpress продвижение",
+              "freq": 39,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "оптимизация сайта wordpress",
+              "freq": 37,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo оптимизация wordpress",
+              "freq": 32,
+              "w": 2,
+              "freqSource": "owner"
+            },
+            {
+              "q": "продвижение сайтов wordpress",
+              "freq": 30,
+              "w": 1,
+              "freqSource": "owner"
+            },
+            {
+              "q": "продвижение вордпресс",
+              "freq": 27,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo продвижение wordpress",
+              "freq": 22,
+              "w": 1,
+              "freqSource": "owner"
+            },
+            {
+              "q": "сео wordpress",
+              "freq": 19,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "оптимизация сайтов вордпресс",
+              "freq": 16,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo продвижение сайта на wordpress",
+              "freq": 16,
+              "w": 15,
+              "freqSource": "owner"
+            },
+            {
+              "q": "продвижение сайта на вордпресс",
+              "freq": 15,
+              "w": 9,
+              "freqSource": "owner"
+            },
+            {
+              "q": "сео сайта вордпресс",
+              "freq": 13,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo сайта вордпресс",
+              "freq": 11,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "оптимизация изображения wordpress",
+              "freq": 11,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo настройки wordpress",
+              "freq": 10,
+              "w": 1,
+              "freqSource": "owner"
+            },
+            {
+              "q": "продвижение сайта wordpress",
+              "freq": 30,
+              "w": 1,
+              "freqSource": "owner"
+            },
+            {
+              "q": "оптимизация сайта вордпресс",
+              "freq": 16,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "оптимизации wordpress сайта",
+              "freq": 37,
+              "w": 0,
+              "freqSource": "owner"
+            }
+          ]
+        },
+        {
+          "id": "seo-tilda",
+          "title": "SEO Tilda",
+          "queries": [
+            {
+              "q": "tilda seo оптимизация",
+              "freq": 23,
+              "w": 3,
+              "freqSource": "owner"
+            },
+            {
+              "q": "tilda seo",
+              "freq": 181,
+              "w": 8,
+              "freqSource": "owner"
+            },
+            {
+              "q": "tilda продвижение сайта",
+              "freq": 29,
+              "w": 1,
+              "freqSource": "owner"
+            },
+            {
+              "q": "tilda продвижение",
+              "freq": 33,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo товаров тильда",
+              "freq": 31,
+              "w": 2,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo сайта tilda",
+              "freq": 44,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo продвижение tilda",
+              "freq": 22,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo продвижение тильда",
+              "freq": 40,
+              "w": 3,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo продвижение сайта на tilda",
+              "freq": 18,
+              "w": 14,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo продвижение сайта на тильде",
+              "freq": 15,
+              "w": 9,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo оптимизация тильда",
+              "freq": 27,
+              "w": 3,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo оптимизация сайта tilda",
+              "freq": 7,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo оптимизация сайта на тильде",
+              "freq": 14,
+              "w": 4,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo на тильде",
+              "freq": 238,
+              "w": 9,
+              "freqSource": "owner"
+            },
+            {
+              "q": "тильда сео",
+              "freq": 390,
+              "w": 17,
+              "freqSource": "owner"
+            },
+            {
+              "q": "тильда оптимизация сайта",
+              "freq": 51,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "сео товары тильда",
+              "freq": 25,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "сео продвижение сайта тильда",
+              "freq": 17,
+              "w": 1,
+              "freqSource": "owner"
+            },
+            {
+              "q": "сео продвижение на тильде",
+              "freq": 26,
+              "w": 6,
+              "freqSource": "owner"
+            },
+            {
+              "q": "сео оптимизация тильды",
+              "freq": 34,
+              "w": 5,
+              "freqSource": "owner"
+            },
+            {
+              "q": "сео оптимизация сайта тильда",
+              "freq": 14,
+              "w": 1,
+              "freqSource": "owner"
+            },
+            {
+              "q": "продвижение тильды",
+              "freq": 220,
+              "w": 4,
+              "freqSource": "owner"
+            },
+            {
+              "q": "продвижение сайта тильда",
+              "freq": 150,
+              "w": 22,
+              "freqSource": "owner"
+            },
+            {
+              "q": "продвижение сайта на тильде в поисковиках",
+              "freq": 4,
+              "w": 4,
+              "freqSource": "owner"
+            },
+            {
+              "q": "оптимизация tilda",
+              "freq": 29,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "оптимизация тильда",
+              "freq": 112,
+              "w": 2,
+              "freqSource": "owner"
+            }
+          ]
+        },
+        {
+          "id": "seo-1с-битрикс",
+          "title": "SEO 1С-Битрикс",
+          "queries": [
+            {
+              "q": "seo bitrix",
+              "freq": 82,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo продвижение сайтов битрикс",
+              "freq": 13,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo продвижение битрикс",
+              "freq": 17,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo 1с битрикс",
+              "freq": 39,
+              "w": 1,
+              "freqSource": "owner"
+            },
+            {
+              "q": "продвижение сайта на битрикс недорого",
+              "freq": 8,
+              "w": 8,
+              "freqSource": "owner"
+            },
+            {
+              "q": "продвижение сайта на битрикс",
+              "freq": 43,
+              "w": 5,
+              "freqSource": "owner"
+            },
+            {
+              "q": "продвижение интернет магазина на битрикс",
+              "freq": 8,
+              "w": 5,
+              "freqSource": "owner"
+            },
+            {
+              "q": "продвижение битрикс",
+              "freq": 80,
+              "w": 1,
+              "freqSource": "owner"
+            }
+          ]
+        },
+        {
+          "id": "seo-opencart",
+          "title": "SEO OpenCart",
+          "queries": [
+            {
+              "q": "seo опенкарт",
+              "freq": 39,
+              "w": 0,
+              "freqSource": "owner"
+            },
+            {
+              "q": "opencart seo продвижение",
+              "freq": 55,
+              "w": 54,
+              "freqSource": "owner"
+            },
+            {
+              "q": "opencart seo",
+              "freq": 133,
+              "w": 4,
+              "freqSource": "owner"
+            },
+            {
+              "q": "opencart 3 seo",
+              "freq": 23,
+              "w": 0,
+              "freqSource": "owner"
+            }
+          ]
+        },
+        {
+          "id": "seo-joomla",
+          "title": "SEO Joomla",
+          "queries": [
+            {
+              "q": "seo joomla",
+              "freq": 90,
+              "w": 35,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo продвижение joomla",
+              "freq": 34,
+              "w": 26,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo продвижение сайта на joomla",
+              "freq": 8,
+              "w": 8,
+              "freqSource": "owner"
+            },
+            {
+              "q": "seo продвижение джумла",
+              "freq": 8,
+              "w": 8,
+              "freqSource": "owner"
+            }
+          ]
+        },
+        {
+          "id": "seo-drupal",
+          "title": "SEO Drupal",
+          "queries": [
+            {
+              "q": "продвижение сайта на drupal",
+              "freq": 25,
+              "w": 24,
+              "freqSource": "owner"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "id": "seo-modx",
+      "title": "SEO Modx",
+      "reason": "Решение владельца: запросов мало и частотности нулевые — раздел не развиваем",
+      "decidedAt": "2026-10-01"
+    }
+  ]
+}
