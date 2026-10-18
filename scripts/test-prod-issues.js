@@ -387,6 +387,17 @@ async function main() {
     assert.ok(/clearTimeout\(conflictTimer\)/.test(stopFn), 'stopBot не очищает таймер перезапуска');
   });
 
+  await test('в боте есть команды управления черновиками и согласованием', () => {
+    const source = fs.readFileSync(require.resolve('../telegram-bot'), 'utf8');
+    for (const command of ['/drafts', '/approve', '/deny', '/approvals', '/modx']) {
+      assert.ok(source.includes(command), `нет команды ${command}`);
+    }
+    // /drafts показывает и id черновика, и команду одобрения — чтобы id не искали руками
+    const draftsHandler = source.slice(source.indexOf("bot.onText(/\\/drafts"));
+    assert.ok(/draft\.id/.test(draftsHandler), 'в выводе /drafts нет id черновика');
+    assert.ok(/approve/.test(draftsHandler), 'в выводе /drafts нет готовой команды одобрения');
+  });
+
   await test('unhandled error по-прежнему не роняет процесс', () => {
     const source = fs.readFileSync(require.resolve('../telegram-bot'), 'utf8');
     assert.ok(/bot\.on\('error'/.test(source));

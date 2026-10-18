@@ -213,6 +213,7 @@ const HELP_TEXT =
   `/approvals — заявки на согласование, ожидающие решения\n` +
   `/approve <id> — разрешить заявленное действие\n` +
   `/deny <id> — отклонить заявку\n` +
+  `/drafts — черновики семантики: id, статус и id заявки на одобрение\n` +
   `/modx — состояние коннектора публикации MODX\n` +
   'Пришли .xlsx с частотностями (в подписи id черновика) — импортирую в черновик\n' +
   `/allow &lt;chatId&gt; — разрешить доступ\n` +
@@ -465,6 +466,40 @@ function registerHandlers() {
       );
 
       await safeSendMessage(chatId, `🔐 <b>Ожидают решения (${pending.length}):</b>\n\n${lines.join('\n\n')}`);
+    } catch (error) {
+      await safeSendMessage(chatId, `❌ Ошибка: ${escapeTelegram(error.message)}`);
+    }
+  });
+
+  bot.onText(/\/drafts(?:@\w+)?/, async (msg) => {
+    if (!(await requireAdmin(msg))) return;
+    const chatId = String(msg.chat.id);
+
+    try {
+      const semantics = require('./lib/semantics');
+      const drafts = await semantics.listDrafts(8);
+
+      if (drafts.length === 0) {
+        return safeSendMessage(
+          chatId,
+          'Черновиков семантики пока нет. Создаётся командой-задачей: ' +
+            '«собери черновик семантики по группе seo-wordpress».'
+        );
+      }
+
+      const lines = [];
+      for (const draft of drafts) {
+        const status = await semantics.draftStatus(draft);
+        const pill = status === 'approved' ? '✅ одобрен' : status === 'denied' ? '🚫 отклонён' : '⏳ ждёт одобрения';
+        lines.push(
+          `• черновик <code>${escapeTelegram(draft.id)}</code> — ${pill}\n` +
+            `  ${escapeTelegram(draft.title)}\n` +
+            `  запросов владельца: ${draft.totals?.ownerQueries ?? '?'}, кандидатов: ${draft.totals?.suggestedQueries ?? '?'}` +
+            (draft.approvalId ? `\n  одобрить: <code>/approve ${escapeTelegram(draft.approvalId)}</code>` : '')
+        );
+      }
+
+      await safeSendMessage(chatId, `📋 <b>Черновики семантики</b>\n\n${lines.join('\n\n')}`);
     } catch (error) {
       await safeSendMessage(chatId, `❌ Ошибка: ${escapeTelegram(error.message)}`);
     }
