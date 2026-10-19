@@ -196,7 +196,7 @@ function buildAiTaskDescription(taskData) {
       : toStr(taskData.tools_needed, 'web_search'),
     ''
   );
-  parts.push('<b>✅ Для запуска:</b> переместите задачу в колонку «К выполнению»');
+  parts.push('<b>✅ Для запуска:</b> переместите задачу в колонку «В работе»');
 
   return parts.join('<br>');
 }
@@ -217,7 +217,7 @@ async function createYougileTask(taskData, columnId) {
   return yougile.createTask({
     title: taskData.title,
     description,
-    columnId: columnId || config.columnDefault || config.columnAwaitingConfirmation,
+    columnId: columnId || config.columnDefault,
     assigned: config.yougileUserId ? [config.yougileUserId] : undefined,
     stickers: { [config.aiStickerId]: 'empty' },
   });
@@ -227,6 +227,8 @@ async function createYougileTask(taskData, columnId) {
 /* Разбор письма через GLM                                             */
 /* ------------------------------------------------------------------ */
 
+const { toolsForPrompt } = require('./tools');
+
 const MAIL_ANALYSIS_PROMPT = `Проанализируй запрос из письма и разбей его на ОТДЕЛЬНЫЕ задачи.
 
 ВАЖНО: если в запросе несколько действий — создай несколько задач.
@@ -234,8 +236,9 @@ const MAIL_ANALYSIS_PROMPT = `Проанализируй запрос из пи�
 Для каждой задачи:
 - Если можешь выполнить АВТОНОМНО (поиск, анализ, подготовка документа):
   - can_execute: true
-  - execution_plan: массив из 3-7 подробных шагов (ОБЯЗАТЕЛЬНО заполни)
-  - tools_needed: массив инструментов (web_search, web_analysis, create_document)
+  - execution_plan: массив из 3-7 подробных шагов (ОБЯЗАТЕЛЬНО заполни). Шаги КОНКРЕТНЫЕ: с сайтами, сущностями и форматами из письма, а не «проанализировать запрос».
+  - tools_needed: массив инструментов — ТОЛЬКО из списка ниже, ровно те, что реально понадобятся:
+${toolsForPrompt()}
 
 - Если задача для человека:
   - can_execute: false
@@ -381,7 +384,7 @@ async function processMail() {
                 const created = await yougile.createTask({
                   title: taskData.title,
                   description: buildAiTaskDescription(taskData),
-                  columnId: config.columnAwaitingConfirmation || config.columnDefault,
+                  columnId: config.columnDefault,
                   assigned: config.yougileUserId ? [config.yougileUserId] : undefined,
                   stickers: { [config.aiStickerId]: 'empty' },
                 });

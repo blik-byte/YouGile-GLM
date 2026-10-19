@@ -1,5 +1,6 @@
 // task-executor-worker.js
-// Забирает задачи из колонки «К выполнению» и запускает агента.
+// Забирает задачи из колонки-очереди «В работе» (COLUMN_TO_EXECUTE) и запускает агента.
+// После успеха карточка уходит в «На проверку» (COLUMN_REVIEW), а не сразу в «Готово».
 //
 // Исправлено:
 //  H3 — защита от повторного выполнения переехала из `new Set()` в MongoDB.
@@ -36,11 +37,25 @@ async function executeTask(task) {
   await notify.taskStarted({ title, taskId }).catch(() => {});
 
   try {
-    await yougile.setStatus(taskId, 'Выполняется').catch((error) => {
-      console.warn(`⚠️ Не удалось перевести в «Выполняется»: ${error.message}`);
-    });
+    // «Выполняется» в новой схеме доски — та же колонка «В работе» (очередь и
+    // выполнение совмещены; от двойного захвата защищает блокировка в MongoDB).
+    // Перенос пропускаем, если задача уже в целевой колонке — меньше зря дёргаем API.
+    const executingColumnId = config.columnExecuting || config.columnToExecute;
+    const currentColumnId = task.columnId || (task.column && (task.column.id || task.column)) || null;
+    if (currentColumnId !== executingColumnId) {
+      await yougile.setStatus(taskId, 'Выполняется').catch((error) => {
+        console.warn(`⚠️ Не удалось перевести в «Выполняется»: ${error.message}`);
+      });
+    }
 
     await executors.addComment(taskId, '🤖 AI-агент начал выполнение задачи...').catch(() => {});
+
+    // Куда попадёт карточка после успеха: «На проверку» (ручная проверка
+    // владельцем), а без COLUMN_REVIEW — по-старому в «Готово».
+    const successStatus = config.columnReview ? 'На проверку' : 'Готово';
+    const successNote = config.columnReview
+      ? '\n\n📌 Карточка перенесена в «На проверку»: посмотри результат и перенеси в «Готово» (или в «Ошибка», если переделать).'
+      : '';
 
     // Согласованный конвейер идёт жёстким маршрутом, а не свободной импровизацией
     // модели: черновики семантики и страницы создаются детерминированными
@@ -51,9 +66,11 @@ async function executeTask(task) {
       await executors.addComment(taskId, workflow.summary).catch(() => {});
 
       if (workflow.ok) {
-        await yougile.setStatus(taskId, 'Готово').catch(() => {});
+        await yougile.setStatus(taskId, successStatus).catch(() => {});
         await db.finishTaskRun(taskId, 'done', { title, workflow: true });
-        await notify.taskDone({ title, taskId, summary: workflow.summary }).catch(() => {});
+        await notify
+          .taskDone({ title, taskId, summary: workflow.summary + successNote, draftId: workflow.draftId })
+          .catch(() => {});
       } else {
         await yougile.setStatus(taskId, 'Ошибка').catch(() => {});
         await db.finishTaskRun(taskId, 'error', { title, error: workflow.summary });
@@ -76,8 +93,8 @@ async function executeTask(task) {
       await executors
         .addComment(taskId, `✅ Задача выполнена:\n\n${outcome.text}${reviewNote}`)
         .catch(() => {});
-      await yougile.setStatus(taskId, 'Готово').catch((error) => {
-        console.warn(`⚠️ Не удалось перевести в «Готово»: ${error.message}`);
+      await yougile.setStatus(taskId, successStatus).catch((error) => {
+        console.warn(`⚠️ Не удалось перевести в «${successStatus}»: ${error.message}`);
       });
       await db.finishTaskRun(taskId, 'done', { title });
       await notify
@@ -88,7 +105,8 @@ async function executeTask(task) {
             outcome.text +
             (outcome.review && !outcome.review.approved
               ? `\n\n⚠️ Рецензент оставил замечания — см. комментарий к задаче.`
-              : ''),
+              : '') +
+            successNote,
         })
         .catch(() => {});
       console.log(`✅ Задача ${taskId} выполнена за ${outcome.steps} шагов`);
@@ -139,7 +157,7 @@ async function checkTasksForExecution() {
   }
 
   if (!tasks || tasks.length === 0) return;
-  console.log(`📬 В колонке «К выполнению»: ${tasks.length} задач`);
+  console.log(`📬 В колонке «В работе»: ${tasks.length} задач`);
 
   let started = 0;
 

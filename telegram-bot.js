@@ -82,19 +82,26 @@ async function resolveAccess(chatId) {
   return { allowed: false, role: null, source: null, strict: true };
 }
 
-/** Уведомить всех администраторов. */
-async function notifyAdmins(message) {
-  if (!bot) return;
+/**
+ * Уведомить всех администраторов.
+ * Возвращает список доставленных сообщений [{chatId, messageId}] — нужен,
+ * чтобы привязать ответ (reply) на уведомление к конкретному черновику.
+ */
+async function notifyAdmins(message, options = {}) {
+  if (!bot) return [];
   const targets = new Set(ADMIN_IDS);
   if (config.telegramChatId) targets.add(config.telegramChatId);
 
+  const sent = [];
   for (const chatId of targets) {
     try {
-      await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
+      const result = await bot.sendMessage(chatId, message, { parse_mode: 'HTML', ...options });
+      if (result && result.message_id) sent.push({ chatId: String(chatId), messageId: result.message_id });
     } catch (error) {
       console.warn(`⚠️ Не удалось уведомить админа ${chatId}: ${error.message}`);
     }
   }
+  return sent;
 }
 
 /** Обработка запроса от пользователя без доступа. */
@@ -159,12 +166,58 @@ async function safeSendMessage(chatId, text, options = {}) {
  * Динамические значения ОБЯЗАТЕЛЬНО экранируются — иначе Telegram отклоняет
  * сообщение с parse_mode: 'HTML' и уведомление теряется.
  */
-async function sendNotification(message) {
+async function sendNotification(message, options = {}) {
   if (!bot || !config.telegramChatId) {
     console.log('⚠️ Telegram-бот не инициализирован или TELEGRAM_CHAT_ID не задан');
     return null;
   }
-  return safeSendMessage(config.telegramChatId, message);
+  return safeSendMessage(config.telegramChatId, message, options);
+}
+
+/* ------------------------------------------------------------------ */
+/* Импорт частотностей владельца                                       */
+/* ------------------------------------------------------------------ */
+
+/** Скачать файл из Telegram по file_id (file_id повторно используем). */
+async function downloadTelegramFile(fileId) {
+  const file = await bot.getFile(fileId);
+  const link = await bot.getFileLink(file.file_path);
+  const response = await fetch(link);
+  return Buffer.from(await response.arrayBuffer());
+}
+
+/**
+ * Импорт .xlsx в конкретный черновик и отчёт о результате.
+ * Единая точка для всех путей: подпись, reply на уведомление, кнопка.
+ */
+async function importFrequenciesFile(chatId, draftId, fileId, fileName) {
+  const semantics = require('./lib/semantics');
+
+  await safeSendMessage(
+    chatId,
+    `📥 Принял файл ${escapeTelegram(toStr(fileName) || 'без имени')}, читаю частотности...`
+  );
+
+  const buffer = await downloadTelegramFile(fileId);
+  const result = await semantics.mergeOwnerFrequencies(draftId, buffer);
+
+  if (!result.success) {
+    return safeSendMessage(chatId, `❌ Не удалось импортировать частотности: ${escapeTelegram(result.error)}`);
+  }
+
+  await db.clearPendingState(chatId).catch(() => {});
+
+  return safeSendMessage(
+    chatId,
+    `✅ Частотности импортированы в черновик <code>${escapeTelegram(draftId)}</code>:\n` +
+      `обновлено запросов: ${result.updated}\nдобавлено новых: ${result.added}\n` +
+      `групп в файле: ${result.groups}` +
+      (result.unmatchedGroups && result.unmatchedGroups.length
+        ? `\n⚠️ пустые группы: ${escapeTelegram(result.unmatchedGroups.join(', '))}`
+        : '') +
+      '\n\nЧерновик с твоими частотностями готов к одобрению: команда /approve и id заявки ' +
+      'пришли в уведомлении о заявке (или посмотри /approvals).'
+  );
 }
 
 /** Готовые шаблоны уведомлений с автоматическим экранированием. */
@@ -179,11 +232,32 @@ const notify = {
       `▶️ <b>Задача запущена</b>\n\n📝 ${escapeTelegram(title)}\n🆔 <code>${escapeTelegram(taskId)}</code>`
     ),
 
-  taskDone: ({ title, taskId, summary }) =>
-    sendNotification(
+  taskDone: async ({ title, taskId, summary, draftId }) => {
+    // Если выполнена задача конвейера семантики — добавляем кнопку загрузки
+    // частотностей и запоминаем сообщение: ответ файлом на него однозначно
+    // определит черновик (без подписи и угадываний).
+    const options = {};
+    if (draftId) {
+      options.reply_markup = {
+        inline_keyboard: [
+          [{ text: `📤 Загрузить частотности (${draftId})`, callback_data: `freq:${draftId}` }],
+        ],
+      };
+    }
+
+    const sent = await sendNotification(
       `✅ <b>Задача выполнена!</b>\n\n📝 ${escapeTelegram(title)}\n🆔 <code>${escapeTelegram(taskId)}</code>` +
-        (summary ? `\n\n${escapeTelegram(String(summary).slice(0, 900))}` : '')
-    ),
+        (summary ? `\n\n${escapeTelegram(String(summary).slice(0, 900))}` : ''),
+      options
+    );
+
+    if (draftId && sent && sent.message_id && config.telegramChatId) {
+      await db
+        .bindDraftMessage(config.telegramChatId, sent.message_id, draftId)
+        .catch((error) => console.warn(`⚠️ Не удалось привязать уведомление к черновику: ${error.message}`));
+    }
+    return sent;
+  },
 
   taskIncomplete: ({ title, taskId, reason }) =>
     sendNotification(
@@ -215,7 +289,7 @@ const HELP_TEXT =
   `/deny <id> — отклонить заявку\n` +
   `/drafts — черновики семантики: id, статус и id заявки на одобрение\n` +
   `/modx — состояние коннектора публикации MODX\n` +
-  'Пришли .xlsx с частотностями (в подписи id черновика) — импортирую в черновик\n' +
+  'Пришли .xlsx с частотностями — ответом (reply) на уведомление о черновике или через кнопку под ним; можно и просто файлом (если черновиков несколько — спрошу, куда отнести)\n' +
   `/allow &lt;chatId&gt; — разрешить доступ\n` +
   `/deny &lt;chatId&gt; — запретить доступ\n` +
   `/help — эта справка\n\n` +
@@ -570,7 +644,7 @@ function registerHandlers() {
         chatId,
         `✅ <b>Задача создана!</b>\n\n🆔 <code>${escapeTelegram(task.id)}</code>\n` +
           `📝 ${escapeTelegram(task.title)}\n\n` +
-          `Задача в YouGile. Переместите её в колонку «К выполнению», чтобы агент взялся за работу.`
+          `Задача в YouGile. Переместите её в колонку «В работе», чтобы агент взялся за работу.`
       );
     } catch (error) {
       await safeSendMessage(chatId, `❌ Ошибка создания задачи: ${escapeTelegram(error.message)}`);
@@ -585,9 +659,9 @@ function registerHandlers() {
 
     try {
       const columns = {
-        'К выполнению': config.columnToExecute,
-        'Выполняется': config.columnExecuting,
-        'Ждут подтверждения': config.columnAwaitingConfirmation,
+        'Входящие задачи': config.columnDefault,
+        'В работе': config.columnToExecute,
+        'На проверку': config.columnReview,
         Готово: config.columnDone,
         Ошибка: config.columnError,
       };
@@ -614,7 +688,10 @@ function registerHandlers() {
   });
 
   // Файл .xlsx в чат — импорт частотностей владельца в черновик семантики.
-  // Id черновика берётся из подписи; если его нет — последний ожидающий черновик.
+  // Черновик определяется детерминированно (приоритеты): id в подписи →
+  // id задачи YouGile в подписи → reply на уведомление бота → кнопка
+  // «Загрузить частотности» → единственный ожидающий черновик.
+  // Если сигналов нет, а черновиков несколько — НЕ угадываем, а спрашиваем кнопками.
   bot.on('message', async (msg) => {
     if (!msg.document) return;
 
@@ -623,7 +700,6 @@ function registerHandlers() {
 
     const fileName = toStr(msg.document.file_name);
     const mime = toStr(msg.document.mime_type);
-    const caption = toStr(msg.caption);
 
     if (!/\.xlsx$/i.test(fileName) && !/spreadsheet|xlsx/i.test(mime)) {
       return safeSendMessage(
@@ -635,61 +711,117 @@ function registerHandlers() {
     try {
       const semantics = require('./lib/semantics');
 
-      // В подписи может быть id черновика (8 hex) или id задачи YouGile (uuid):
-      // владелец естественно копирует тот id, который видел последним
-      const reference = semantics.parseCaptionReference(caption);
-      let draftId = reference.draftId;
+      const choice = await semantics.resolveDraftForUpload({
+        chatId,
+        caption: toStr(msg.caption),
+        replyMessageId: msg.reply_to_message ? msg.reply_to_message.message_id : null,
+      });
 
-      if (!draftId && reference.taskUuid) {
-        const byTask = await semantics.findDraftByTaskId(reference.taskUuid);
-        draftId = byTask ? byTask.id : null;
+      if (choice.draftId) {
+        return await importFrequenciesFile(chatId, choice.draftId, msg.document.file_id, fileName);
       }
 
-      if (!draftId) {
-        const drafts = await semantics.listDrafts(5);
-        for (const draft of drafts) {
-          if ((await semantics.draftStatus(draft)) === 'pending') {
-            draftId = draft.id;
-            break;
-          }
-        }
-      }
+      if (choice.ambiguous.length > 0) {
+        // Запоминаем файл (file_id живёт на стороне Telegram) и спрашиваем, куда его отнести
+        await db.setPendingState(chatId, 'file', {
+          file: { fileId: msg.document.file_id, fileName },
+        });
 
-      if (!draftId) {
+        const keyboard = {
+          inline_keyboard: [
+            ...choice.ambiguous.map((draft) => [
+              {
+                text: `${String(draft.label).slice(0, 46)} · ${draft.id}`.slice(0, 64),
+                callback_data: `pick:${draft.id}`,
+              },
+            ]),
+            [{ text: 'Отмена', callback_data: 'pick:cancel' }],
+          ],
+        };
+
         return safeSendMessage(
           chatId,
-          'Не нашёл черновик семантики, к которому отнести частотности.\n' +
-            'Черновик появляется через минуту после того, как задача конвейера выполнена ' +
-            '(задачи конвейера теперь сами уходят в «К выполнению», переносить руками не нужно).\n' +
-            'Посмотри список: /drafts. В подписи к файлу можно указать id черновика (8 символов) ' +
-            'или id задачи YouGile целиком.'
+          '🤔 Незакрытых черновиков несколько — к какому отнести файл? Файл я запомнил, выбери черновик:',
+          { reply_markup: keyboard }
         );
       }
 
-      await safeSendMessage(chatId, `📥 Принял файл ${escapeTelegram(fileName)}, читаю частотности...`);
-
-      const file = await bot.getFile(msg.document.file_id);
-      const link = await bot.getFileLink(file.file_path);
-      const response = await fetch(link);
-      const buffer = Buffer.from(await response.arrayBuffer());
-
-      const result = await semantics.mergeOwnerFrequencies(draftId, buffer);
-
-      if (!result.success) {
-        return safeSendMessage(chatId, `❌ Не удалось импортировать частотности: ${escapeTelegram(result.error)}`);
-      }
-
-      await safeSendMessage(
+      return safeSendMessage(
         chatId,
-        `✅ Частотности импортированы в черновик <code>${escapeTelegram(draftId)}</code>:\n` +
-          `обновлено запросов: ${result.updated}\nдобавлено новых: ${result.added}\n` +
-          `групп в файле: ${result.groups}` +
-          (result.unmatchedGroups.length ? `\n⚠️ пустые группы: ${escapeTelegram(result.unmatchedGroups.join(', '))}` : '') +
-          '\n\nЧерновик с твоими частотностями готов к одобрению: команда /approve и id заявки ' +
-          'придут в уведомлении о заявке (или посмотри /approvals).'
+        'Не нашёл черновик семантики, к которому отнести частотности.\n' +
+          'Черновик появляется через минуту после того, как задача конвейера выполнена ' +
+          '(задачи конвейера сами уходят в «В работе», переносить руками не нужно).\n' +
+          'Посмотри список: /drafts. Файл можно прислать ответом (reply) на уведомление о черновике ' +
+          'или с подписью — id черновика (8 символов) либо id задачи YouGile целиком.'
       );
     } catch (error) {
       await safeSendMessage(chatId, `❌ Ошибка импорта файла: ${escapeTelegram(error.message)}`);
+    }
+  });
+
+  // Кнопки: «Загрузить частотности» под уведомлением о черновике и выбор
+  // черновика для файла, который бот запомнил при неоднозначности.
+  bot.on('callback_query', async (query) => {
+    const chatId = String(
+      (query.message && query.message.chat && query.message.chat.id) || (query.from && query.from.id) || ''
+    );
+    const data = toStr(query.data);
+
+    try {
+      if (!(await resolveAccess(chatId)).allowed) {
+        await bot.answerCallbackQuery(query.id, { text: 'Доступ запрещён' }).catch(() => {});
+        return;
+      }
+
+      if (data.startsWith('freq:')) {
+        const draftId = data.slice(5).toLowerCase();
+        const pending = await db.takePendingState(chatId).catch(() => null);
+
+        if (pending && pending.kind === 'file' && pending.file && pending.file.fileId) {
+          // Файл уже был прислан, но без однозначного адресата — теперь адресат есть
+          await bot.answerCallbackQuery(query.id, { text: 'Импортирую файл…' }).catch(() => {});
+          return await importFrequenciesFile(chatId, draftId, pending.file.fileId, pending.file.fileName);
+        }
+
+        await db.setPendingState(chatId, 'target', { draftId });
+        await bot.answerCallbackQuery(query.id, { text: 'Жду файл' }).catch(() => {});
+        return safeSendMessage(
+          chatId,
+          `Пришли .xlsx с частотностями следующим сообщением — импортирую в черновик <code>${escapeTelegram(draftId)}</code>.\n` +
+            'Подпись не нужна, выбор я запомнил (действует 30 минут).'
+        );
+      }
+
+      if (data === 'pick:cancel') {
+        await db.clearPendingState(chatId).catch(() => {});
+        await bot.answerCallbackQuery(query.id, { text: 'Отменено' }).catch(() => {});
+        return safeSendMessage(
+          chatId,
+          'Отменил. Файл можно прислать заново — ответом на уведомление о черновике, ' +
+            'с подписью (id черновика) или через кнопку «Загрузить частотности».'
+        );
+      }
+
+      if (data.startsWith('pick:')) {
+        const draftId = data.slice(5).toLowerCase();
+        const pending = await db.takePendingState(chatId).catch(() => null);
+
+        if (!pending || pending.kind !== 'file' || !pending.file || !pending.file.fileId) {
+          await bot.answerCallbackQuery(query.id, { text: 'Файл не найден' }).catch(() => {});
+          return safeSendMessage(
+            chatId,
+            'Не нашёл запомненный файл (возможно, истекло время ожидания). Пришли .xlsx ещё раз — спрошу заново.'
+          );
+        }
+
+        await bot.answerCallbackQuery(query.id, { text: 'Импортирую…' }).catch(() => {});
+        return await importFrequenciesFile(chatId, draftId, pending.file.fileId, pending.file.fileName);
+      }
+
+      await bot.answerCallbackQuery(query.id).catch(() => {});
+    } catch (error) {
+      console.error(`❌ callback_query: ${error.message}`);
+      await bot.answerCallbackQuery(query.id, { text: `Ошибка: ${error.message}` }).catch(() => {});
     }
   });
 
@@ -706,8 +838,11 @@ function registerHandlers() {
     if (/частотност|частоты\s+к/i.test(msg.text) && !msg.document) {
       return safeSendMessage(
         chatId,
-        'Чтобы залить частотности, пришли сам файл .xlsx сообщением с подписью или без.\n' +
-          'Без подписи частотности уйдут в последний черновик, ожидающий одобрения.\n' +
+        'Чтобы залить частотности, пришли сам файл .xlsx.\n' +
+          'Самый надёжный способ — ответом (reply) на уведомление о черновике ' +
+          'или через кнопку «Загрузить частотности» под ним.\n' +
+          'Можно и просто файлом: если незакрытый черновик один — пойму сам, ' +
+          'если несколько — спрошу кнопками.\n' +
           'В подписи можно указать id черновика (8 символов, см. /drafts) ' +
           'или id задачи YouGile целиком — пойму оба варианта.'
       );
@@ -721,7 +856,7 @@ function registerHandlers() {
         chatId,
         `✅ <b>Задача создана!</b>\n\n🆔 <code>${escapeTelegram(task.id)}</code>\n📝 ${escapeTelegram(task.title)}` +
           (task.autoQueued
-            ? '\n\n⚙️ Распознан сценарий конвейера: задача уже поставлена в «К выполнению», ' +
+            ? '\n\n⚙️ Распознан сценарий конвейера: задача уже поставлена в «В работе», ' +
               'переносить вручную не нужно. Результат придёт комментарием в задачу и сюда.'
             : '')
       );
@@ -734,35 +869,53 @@ function registerHandlers() {
 /**
  * Создание задачи в YouGile из произвольного текста пользователя.
  * Вынесено из двух одинаковых блоков (/task и обработчик сообщений).
- */
-/**
- * Создание задачи из текста.
+ *
  * Задачи согласованного конвейера («собери черновик семантики…», «создай страницу
- * по черновику…») ставятся СРАЗУ в колонку «К выполнению»: им не нужно ручное
- * перемещение в веб-интерфейсе, исполнитель подхватит их за 30 секунд.
- * Прочие задачи идут в колонку по умолчанию, как раньше.
+ * по черновику…», «проведи SEO-аудит…») ставятся СРАЗУ в колонку-очередь «В работе»:
+ * им не нужно ручное перемещение, исполнитель подхватит их за 30 секунд.
+ * План для них детерминированный — реальные шаги кода (lib/task-planner.js).
+ *
+ * Прочие задачи проходят через планировщика GLM: индивидуальный план 3-7
+ * конкретных шагов под запрос и инструменты из полного реестра (раньше здесь
+ * был зашит одинаковый куцый план из трёх общих шагов и жёсткая пара
+ * web_search+web_analysis для любой задачи).
+ * Если планировщик недоступен — безопасный общий план, задача всё равно создаётся.
  */
 async function createTaskFromText(text) {
   const { createYougileTask } = require('./email-worker');
   const workflows = require('./lib/workflows');
+  const planner = require('./lib/task-planner');
   const { config } = require('./lib/config');
 
-  const isWorkflow = workflows.detectWorkflow(String(text)) !== null;
-  const columnId = isWorkflow && config.columnToExecute ? config.columnToExecute : undefined;
+  const workflow = workflows.detectWorkflow(String(text));
+  const columnId = workflow && config.columnToExecute ? config.columnToExecute : undefined;
 
-  const task = await createYougileTask(
-    {
+  let taskData;
+
+  if (workflow) {
+    const preset = planner.WORKFLOW_PLANS[workflow] || {};
+    taskData = {
       title: String(text).slice(0, 100),
       can_execute: true,
-      execution_plan: isWorkflow
-        ? ['Выполнить сценарий конвейера', 'Отчитаться комментарием и заявкой на согласование']
-        : ['Проанализировать запрос', 'Выполнить необходимые действия', 'Сохранить результат'],
-      tools_needed: ['web_search', 'web_analysis'],
-    },
-    columnId
-  );
+      execution_plan: preset.plan || [
+        'Выполнить сценарий конвейера',
+        'Отчитаться комментарием и заявкой на согласование',
+      ],
+      tools_needed: preset.tools || [],
+    };
+  } else {
+    const planned = await planner.planTaskFromText(text);
+    taskData = {
+      title: String(text).slice(0, 100) || planned.title,
+      can_execute: planned.can_execute,
+      execution_plan: planned.execution_plan,
+      tools_needed: planned.tools_needed,
+    };
+  }
 
-  return { ...task, autoQueued: isWorkflow };
+  const task = await createYougileTask(taskData, columnId);
+
+  return { ...task, autoQueued: Boolean(workflow) };
 }
 
 /* ------------------------------------------------------------------ */

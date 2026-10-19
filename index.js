@@ -457,9 +457,9 @@ async function sendDailyReport() {
   const { display } = partsInTimezone();
 
   const columns = {
-    '🔄 К выполнению': config.columnToExecute,
-    '⚙️ Выполняется': config.columnExecuting,
-    '⏳ Ждут подтверждения': config.columnAwaitingConfirmation,
+    '📥 Входящие задачи': config.columnDefault,
+    '🔄 В работе': config.columnToExecute,
+    '👀 На проверку': config.columnReview,
     '✅ Готово': config.columnDone,
     '❌ Ошибка': config.columnError,
   };

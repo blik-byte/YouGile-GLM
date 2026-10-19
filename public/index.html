@@ -143,6 +143,12 @@
     </div>
 
     <div class="card" style="margin-bottom:16px">
+      <h2>Инструменты агента</h2>
+      <div class="muted" style="margin-bottom:8px">Полный реестр инструментов, доступных моделям: видно, чем агент умеет работать и из чего выбирает инструменты для задачи.</div>
+      <div id="tools"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
       <h2>Последние запуски агента</h2>
       <div class="scroll"><table id="agentRuns"></table></div>
     </div>
@@ -279,13 +285,23 @@
     const cloud = services.cloud || {};
     if (cloud.ok && cloud.data && cloud.data.configured) {
       const d = cloud.data;
-      const label = d.provider === 'r2' ? 'Cloudflare R2' : d.provider === 'pcloud' ? 'pCloud' : 'Облако';
+      const label = d.provider === 'r2' ? 'Cloudflare R2'
+        : d.provider === 'pcloud' ? 'pCloud'
+        : d.provider === 'mongo' ? 'Хранилище файлов (MongoDB)'
+        : 'Облако';
 
       let detail;
       if (d.provider === 'r2') {
         detail = 'бакет ' + d.bucket + ' · отдача: ' + d.delivery +
           (d.publicBaseUrl ? ' (' + d.publicBaseUrl + ')' : '') +
           (d.objects !== null && d.objects !== undefined ? ' · объектов: ' + d.objects : '');
+      } else if (d.provider === 'mongo') {
+        // Провайдер mongo: файлы лежат в той же MongoDB (коллекция stored_files),
+        // отдаются подписанными ссылками через этот сервис.
+        detail = 'файлов: ' + (d.files ?? 0) +
+          (d.totalMb !== null && d.totalMb !== undefined ? ' · объём: ' + d.totalMb + ' МБ' : '') +
+          ' · отдача: ' + (d.delivery || 'подписанные ссылки') +
+          (d.database ? ' · база: ' + d.database : '');
       } else {
         const used = d.usedGb || 0, quota = d.quotaGb || 0;
         const percent = quota > 0 ? Math.min(100, Math.round((used / quota) * 100)) : 0;
@@ -341,6 +357,19 @@
     $('services').innerHTML = rows.join('');
   }
 
+  function renderTools(tools) {
+    if (!Array.isArray(tools) || tools.length === 0) {
+      $('tools').innerHTML = '<div class="empty">нет данных</div>';
+      return;
+    }
+    $('tools').innerHTML =
+      '<table><thead><tr><th style="width:190px">Инструмент</th><th>Что делает</th></tr></thead><tbody>' +
+      tools.map((t) =>
+        '<tr><td class="mono">' + esc(t.name) + '</td><td>' + esc(t.description) + '</td></tr>'
+      ).join('') +
+      '</tbody></table>';
+  }
+
   function renderColumns(columns, error) {
     if (error) { $('columns').innerHTML = '<div class="err-line">' + esc(error) + '</div>'; return; }
     if (!columns || columns.length === 0) { $('columns').innerHTML = '<div class="empty">нет данных</div>'; return; }
@@ -357,7 +386,7 @@
     const table = $('agentRuns');
     if (error) { table.innerHTML = '<tr><td class="err-line">' + esc(error) + '</td></tr>'; return; }
     if (!runs || runs.length === 0) {
-      table.innerHTML = '<tr><td class="empty">Запусков ещё не было. Переместите задачу в колонку «К выполнению».</td></tr>';
+      table.innerHTML = '<tr><td class="empty">Запусков ещё не было. Переместите задачу в колонку «В работе».</td></tr>';
       return;
     }
 
@@ -486,6 +515,7 @@
       renderWarnings(data.warnings);
       renderMetrics(data);
       renderServices(data.services || {});
+      renderTools(data.tools);
       renderColumns(data.columns, data.columnsError);
       renderAgentRuns(data.agentRuns, data.agentRunsError);
       renderTaskRuns(data.taskRuns, data.taskRunsError);

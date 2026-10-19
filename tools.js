@@ -295,7 +295,7 @@ const tools = [
           taskId: { type: 'string', description: 'Реальный ID задачи в YouGile' },
           status: {
             type: 'string',
-            enum: ['Выполняется', 'Готово', 'Ошибка'],
+            enum: ['Выполняется', 'На проверку', 'Готово', 'Ошибка'],
             description: 'Новый статус задачи',
           },
         },
@@ -308,5 +308,21 @@ const tools = [
 /** Имена инструментов — удобно для тестов и валидации. */
 const TOOL_NAMES = tools.map((tool) => tool.function.name);
 
+/**
+ * Плоский список {name, description} — для дашборда (владельцу видно, какие
+ * инструменты вообще существуют) и для промптов планировщика.
+ */
+const TOOL_LIST = tools.map((tool) => ({
+  name: tool.function.name,
+  description: tool.function.description,
+}));
+
+/** Компактный перечень инструментов для вставки в промпты. */
+function toolsForPrompt() {
+  return TOOL_LIST.map((tool) => `- ${tool.name}: ${tool.description}`).join('\n');
+}
+
 module.exports = tools;
 module.exports.TOOL_NAMES = TOOL_NAMES;
+module.exports.TOOL_LIST = TOOL_LIST;
+module.exports.toolsForPrompt = toolsForPrompt;

@@ -738,7 +738,7 @@ async function updateTaskStatus(taskId, status) {
   if (!newStatus) {
     return {
       success: false,
-      error: 'Не передан status. Допустимые значения: Выполняется, Готово, Ошибка',
+      error: 'Не передан status. Допустимые значения: Выполняется, На проверку, Готово, Ошибка',
     };
   }
 

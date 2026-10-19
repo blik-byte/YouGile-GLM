@@ -28,6 +28,13 @@ const COLLECTIONS = {
   // Файлы небольшие (КБ–сотни КБ), поэтому GridFS не нужен: обычного
   // документа с Binary-полем хватает с запасом (лимит BSON — 16 МБ).
   files: 'stored_files',
+  // Привязка «сообщение Telegram → черновик семантики»: когда бот отправляет
+  // уведомление о черновике/заявке, message_id запоминается, и ответ файлом
+  // на такое сообщение однозначно определяет черновик (без подписи и угадываний).
+  tgBindings: 'tg_draft_bindings',
+  // Одноразовые состояния чата: запомненный файл (когда черновиков несколько
+  // и бот спросил кнопками) и «цель загрузки» после нажатия кнопки.
+  tgPending: 'tg_pending_states',
 };
 
 /** Сколько минут задача считается «ещё выполняется» после рестарта процесса. */
@@ -74,6 +81,20 @@ const INDEX_DEFINITIONS = [
   { collection: COLLECTIONS.agentRuns, keys: { startedAt: -1 }, name: 'startedAt_desc' },
   { collection: COLLECTIONS.agentRuns, keys: { taskId: 1, startedAt: -1 }, name: 'taskId_startedAt' },
   { collection: COLLECTIONS.files, keys: { key: 1 }, name: 'uniq_key', options: { unique: true } },
+  { collection: COLLECTIONS.tgBindings, keys: { chatId: 1, messageId: 1 }, name: 'uniq_chat_message', options: { unique: true } },
+  {
+    collection: COLLECTIONS.tgBindings,
+    keys: { createdAt: 1 },
+    name: 'ttl_createdAt',
+    options: { expireAfterSeconds: 30 * 24 * 3600 },
+  },
+  { collection: COLLECTIONS.tgPending, keys: { chatId: 1 }, name: 'uniq_chatId', options: { unique: true } },
+  {
+    collection: COLLECTIONS.tgPending,
+    keys: { updatedAt: 1 },
+    name: 'ttl_updatedAt',
+    options: { expireAfterSeconds: 3600 },
+  },
 ];
 
 /**
@@ -600,6 +621,59 @@ async function countAccess() {
   return db.collection(COLLECTIONS.botAccess).estimatedDocumentCount();
 }
 
+/* ------------------------------------------------------------------ */
+// Привязка файлов частотностей к черновикам (Telegram)
+/* ------------------------------------------------------------------ */
+
+/** Запомнить, что сообщение Telegram относится к черновику (ответ на него файлом = импорт в этот черновик). */
+async function bindDraftMessage(chatId, messageId, draftId) {
+  const db = await getDb();
+  await db.collection(COLLECTIONS.tgBindings).updateOne(
+    { chatId: String(chatId), messageId: Number(messageId) },
+    { $set: { draftId: String(draftId), createdAt: new Date() } },
+    { upsert: true }
+  );
+}
+
+/** Найти черновик по id сообщения, на которое пользователь ответил файлом. */
+async function findDraftByMessage(chatId, messageId) {
+  const db = await getDb();
+  return db.collection(COLLECTIONS.tgBindings).findOne({
+    chatId: String(chatId),
+    messageId: Number(messageId),
+  });
+}
+
+/**
+ * Одноразовое состояние чата:
+ *  - kind 'target' — нажата кнопка «Загрузить частотности», ждём файл в этот черновик;
+ *  - kind 'file'    — файл получен, но черновиков несколько; ждём выбор кнопкой.
+ */
+async function setPendingState(chatId, kind, payload) {
+  const db = await getDb();
+  await db.collection(COLLECTIONS.tgPending).updateOne(
+    { chatId: String(chatId) },
+    { $set: { kind, ...payload, updatedAt: new Date() } },
+    { upsert: true }
+  );
+}
+
+/** Забрать (прочитать и удалить) состояние чата, если оно не старше maxAgeMs. */
+async function takePendingState(chatId, maxAgeMs = 30 * 60 * 1000) {
+  const db = await getDb();
+  const cutoff = new Date(Date.now() - maxAgeMs);
+  const found = await db
+    .collection(COLLECTIONS.tgPending)
+    .findOneAndDelete({ chatId: String(chatId), updatedAt: { $gte: cutoff } });
+  return found && (found.value || found);
+}
+
+/** Удалить любое состояние чата (отмена). */
+async function clearPendingState(chatId) {
+  const db = await getDb();
+  await db.collection(COLLECTIONS.tgPending).deleteMany({ chatId: String(chatId) });
+}
+
 module.exports = {
   COLLECTIONS,
   INDEX_DEFINITIONS,
@@ -641,5 +715,11 @@ module.exports = {
   revokeAccess,
   listRequests,
   registerRequest,
+
+  bindDraftMessage,
+  findDraftByMessage,
+  setPendingState,
+  takePendingState,
+  clearPendingState,
   countAccess,
 };

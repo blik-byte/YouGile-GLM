@@ -1547,7 +1547,11 @@ async function main() {
       workflows.detectWorkflow('создай страницу по черновику 1a2b3c4d, кластер "продвижение сайта на вордпресс"'),
       'page'
     );
-    assert.strictEqual(workflows.detectWorkflow('Проведи SEO-аудит сайта example.ru'), null, 'обычные задачи должны идти агенту');
+    assert.strictEqual(
+      workflows.detectWorkflow('Проведи SEO-аудит сайта example.ru'),
+      'seo_audit',
+      'SEO-аудит стал сценарием конвейера: детерминированный маршрут вместо свободной импровизации'
+    );
     assert.strictEqual(workflows.detectWorkflow('сравни цены конкурентов'), null);
   });
 
@@ -1684,6 +1688,170 @@ async function main() {
       assert.strictEqual(result.success, false);
       assert.ok(/одобрен/i.test(result.error), result.error);
     });
+  });
+
+  /* ================================================================== */
+  console.log('\n— Схема доски, сценарий SEO-аудита, планировщик и детерминированный импорт частотностей —');
+  /* ================================================================== */
+
+  await test('SEO-аудит маршрутизируется в сценарий конвейера, извлечение домена точное', () => {
+    const workflows = require('../lib/workflows');
+    assert.strictEqual(workflows.detectWorkflow('Проведи SEO-аудит сайта iek-snab.ru'), 'seo_audit');
+    assert.strictEqual(workflows.detectWorkflow('нужен seo аудит 77up.ru'), 'seo_audit');
+    assert.strictEqual(workflows.detectWorkflow('site audit for example.com'), 'seo_audit');
+
+    assert.strictEqual(workflows.extractDomain('Проведи SEO-аудит сайта iek-snab.ru'), 'iek-snab.ru');
+    assert.strictEqual(workflows.extractDomain('аудит https://77up.ru/price?a=1'), '77up.ru');
+    assert.strictEqual(workflows.extractDomain('аудит WWW.Rocket-Up.Space'), 'www.rocket-up.space');
+    assert.strictEqual(
+      workflows.extractDomain('письмо на ivan@example.com, аудит сайта target.ru'),
+      'target.ru',
+      'email-адрес не должен приниматься за цель аудита'
+    );
+    assert.strictEqual(workflows.extractDomain('аудит our-app.onrender.com'), null, 'собственная инфраструктура исключена');
+    assert.strictEqual(workflows.extractDomain('проведи аудит'), null);
+  });
+
+  await test('планы конвейеров детерминированные и инструменты из реестра', () => {
+    const { WORKFLOW_PLANS } = require('../lib/task-planner');
+    const { TOOL_NAMES } = require('../tools');
+    for (const key of ['semantics', 'page', 'seo_audit']) {
+      const preset = WORKFLOW_PLANS[key];
+      assert.ok(preset && Array.isArray(preset.plan) && preset.plan.length >= 3, `${key}: план минимум из 3 шагов`);
+      for (const tool of preset.tools) assert.ok(TOOL_NAMES.includes(tool), `${key}: неизвестный инструмент ${tool}`);
+    }
+  });
+
+  await test('sanitizeTaskPlan: мусор от модели не ломает создание задачи', () => {
+    const { sanitizeTaskPlan } = require('../lib/task-planner');
+
+    const good = sanitizeTaskPlan(
+      {
+        title: 'SEO-аудит iek-snab.ru',
+        can_execute: true,
+        execution_plan: ['Шаг 1: собрать данные', 'Шаг 2: проанализировать', 'Шаг 3: сохранить отчёт'],
+        tools_needed: ['seo_audit', 'create_document'],
+      },
+      'Проведи SEO-аудит сайта iek-snab.ru'
+    );
+    assert.deepStrictEqual(good.tools_needed, ['seo_audit', 'create_document']);
+    assert.strictEqual(good.execution_plan.length, 3);
+
+    const fallback = sanitizeTaskPlan(null, 'сделай что-нибудь полезное для сайта');
+    assert.ok(fallback.execution_plan.length >= 3, 'резервный план обязателен');
+    assert.ok(
+      !fallback.execution_plan.some((step) => /Проанализировать запрос/.test(step)),
+      'старый куцый план больше не используется'
+    );
+    assert.deepStrictEqual(fallback.tools_needed, ['web_search']);
+    assert.strictEqual(fallback.title, 'сделай что-нибудь полезное для сайта');
+
+    const dirty = sanitizeTaskPlan(
+      {
+        title: 'x'.repeat(300),
+        execution_plan: 'Шаг первый\nШаг второй',
+        tools_needed: 'web_search, blabla, web_search, seo_audit',
+        can_execute: false,
+      },
+      'исходный текст'
+    );
+    assert.strictEqual(dirty.title.length, 100);
+    assert.deepStrictEqual(dirty.execution_plan, ['Шаг первый', 'Шаг второй']);
+    assert.deepStrictEqual(dirty.tools_needed, ['web_search', 'seo_audit'], 'неизвестные инструменты и дубли отброшены');
+    assert.strictEqual(dirty.can_execute, false);
+
+    const long = sanitizeTaskPlan({ execution_plan: Array.from({ length: 20 }, (_, i) => `Шаг ${i + 1}`) }, 't');
+    assert.strictEqual(long.execution_plan.length, 7, 'план ограничен 7 шагами');
+  });
+
+  await test('промпт планировщика содержит весь реестр инструментов', () => {
+    const { PLANNER_PROMPT } = require('../lib/task-planner');
+    const { TOOL_NAMES } = require('../tools');
+    for (const name of TOOL_NAMES) {
+      assert.ok(PLANNER_PROMPT.includes(name), `инструмент ${name} не описан в промпте планировщика`);
+    }
+  });
+
+  await test('chooseDraftTarget: приоритеты сигналов и честная неоднозначность', () => {
+    const semantics = require('../lib/semantics');
+    const pending = [
+      { id: 'aaaaaaaa', groups: [{ title: 'Wordpress CMS' }] },
+      { id: 'bbbbbbbb', groups: [{ title: 'Интернет-магазины' }] },
+    ];
+
+    // Явные сигналы важнее всего, подпись — важнее остальных
+    assert.strictEqual(
+      semantics.chooseDraftTarget({ captionDraftId: 'CCCC1234', replyDraftId: 'dddddddd', pendingDrafts: pending }).draftId,
+      'cccc1234'
+    );
+    assert.strictEqual(semantics.chooseDraftTarget({ taskDraftId: 'eeeeeeee', replyDraftId: 'dddddddd' }).draftId, 'eeeeeeee');
+    assert.strictEqual(semantics.chooseDraftTarget({ replyDraftId: 'ffffffff' }).draftId, 'ffffffff');
+    assert.strictEqual(semantics.chooseDraftTarget({ waitDraftId: '12345678', pendingDrafts: pending }).draftId, '12345678');
+
+    // Единственный ожидающий черновик — надёжный сигнал
+    const single = semantics.chooseDraftTarget({ pendingDrafts: [pending[0]] });
+    assert.strictEqual(single.draftId, 'aaaaaaaa');
+    assert.deepStrictEqual(single.ambiguous, []);
+
+    // Несколько без сигнала: НЕ угадываем, возвращаем список для кнопок
+    const ambiguous = semantics.chooseDraftTarget({ pendingDrafts: pending });
+    assert.strictEqual(ambiguous.draftId, null);
+    assert.strictEqual(ambiguous.ambiguous.length, 2);
+    assert.strictEqual(ambiguous.ambiguous[0].label, 'Wordpress CMS');
+    assert.strictEqual(ambiguous.ambiguous[1].id, 'bbbbbbbb');
+
+    // Вообще ничего
+    const none = semantics.chooseDraftTarget({});
+    assert.strictEqual(none.draftId, null);
+    assert.deepStrictEqual(none.ambiguous, []);
+  });
+
+  await test('статус → колонка: «На проверку» и «Выполняется» работают по новой схеме', () => {
+    const yougile = require('../lib/yougile-client');
+    const cfg = {
+      columnToExecute: 'col-work',
+      columnExecuting: '',
+      columnReview: 'col-review',
+      columnDone: 'col-done',
+      columnError: 'col-error',
+    };
+    assert.strictEqual(yougile.columnForStatus('В работе', cfg), 'col-work');
+    assert.strictEqual(
+      yougile.columnForStatus('Выполняется', cfg),
+      'col-work',
+      'без COLUMN_EXECUTING выполнение совмещено с очередью «В работе»'
+    );
+    assert.strictEqual(yougile.columnForStatus('На проверку', cfg), 'col-review');
+    assert.strictEqual(yougile.columnForStatus('Готово', cfg), 'col-done');
+    assert.strictEqual(yougile.columnForStatus('Ошибка', cfg), 'col-error');
+    assert.strictEqual(yougile.columnForStatus('Ждёт подтверждения', cfg), null, '«Ожидает подтверждения» исключена из схемы');
+    assert.strictEqual(
+      yougile.columnForStatus('На проверку', { ...cfg, columnReview: '' }),
+      'col-done',
+      'без COLUMN_REVIEW откат в «Готово»'
+    );
+  });
+
+  await test('дашборд отдаёт реестр инструментов фронту', () => {
+    const dashboard = require('../lib/dashboard');
+    const list = dashboard.collectTools();
+    assert.ok(Array.isArray(list) && list.length >= 10, 'инструментов должен быть полный реестр');
+    const names = list.map((tool) => tool.name);
+    for (const expected of ['web_search', 'web_analysis', 'seo_audit', 'semantics_draft', 'site_page_create', 'create_document']) {
+      assert.ok(names.includes(expected), `${expected} отсутствует в списке инструментов дашборда`);
+    }
+    for (const tool of list) {
+      assert.ok(tool.description && tool.description.length > 20, `${tool.name}: нет внятного описания`);
+    }
+  });
+
+  await test('старый куцый план и «Ожидает подтверждения» полностью удалены из кода', () => {
+    const files = ['telegram-bot.js', 'email-worker.js', 'index.js', 'lib/dashboard.js', 'lib/yougile-client.js', 'lib/config.js'];
+    for (const file of files) {
+      const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+      assert.ok(!source.includes('Проанализировать запрос'), `${file}: остался старый куцый план`);
+      assert.ok(!source.includes('columnAwaitingConfirmation'), `${file}: осталась ссылка на удалённую колонку`);
+    }
   });
 
   /* ================================================================== */
