@@ -35,6 +35,9 @@ const COLLECTIONS = {
   // Одноразовые состояния чата: запомненный файл (когда черновиков несколько
   // и бот спросил кнопками) и «цель загрузки» после нажатия кнопки.
   tgPending: 'tg_pending_states',
+  // Короткие отчёты по задачам для страницы GET /report/<id>: полный текст
+  // живёт здесь и в комментарии YouGile, а в Telegram уходит только ссылка.
+  reports: 'task_reports',
 };
 
 /** Сколько минут задача считается «ещё выполняется» после рестарта процесса. */
@@ -513,6 +516,39 @@ async function filesTotalBytes() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Отчёты по задачам (страница /report/<id>)                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Сохраняет (обновляет) отчёт задачи. Вызывается воркером на любом финале:
+ * done / partial / error — чтобы ссылка из Telegram всегда открывала текст.
+ */
+async function saveTaskReport({ taskId, title, status, text }) {
+  const db = await getDb();
+  const now = new Date();
+
+  await db.collection(COLLECTIONS.reports).updateOne(
+    { taskId: String(taskId) },
+    {
+      $set: {
+        taskId: String(taskId),
+        title: String(title || '').slice(0, 300),
+        status: String(status || 'done'),
+        text: String(text || ''),
+        updatedAt: now,
+      },
+      $setOnInsert: { createdAt: now },
+    },
+    { upsert: true }
+  );
+}
+
+async function getTaskReport(taskId) {
+  const db = await getDb();
+  return db.collection(COLLECTIONS.reports).findOne({ taskId: String(taskId) });
+}
+
+/* ------------------------------------------------------------------ */
 /* Статистика                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -697,6 +733,9 @@ module.exports = {
   resetTaskRun,
   listTaskRuns,
   getTaskRun,
+
+  saveTaskReport,
+  getTaskReport,
 
   logAgentRun,
   updateAgentRun,

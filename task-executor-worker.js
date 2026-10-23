@@ -21,6 +21,7 @@ const db = require('./db');
 const yougile = require('./lib/yougile-client');
 const { config } = require('./lib/config');
 const { notify } = require('./telegram-bot');
+const notifyText = require('./lib/notify-text');
 
 let timer = null;
 let running = false;
@@ -34,7 +35,14 @@ async function executeTask(task) {
   const title = task.title || '(без названия)';
 
   console.log(`▶️ Выполняю задачу ${taskId}: ${title}`);
-  await notify.taskStarted({ title, taskId }).catch(() => {});
+  // Сценарий распознаём сразу, чтобы в уведомлении «запущена» честно сказать
+  // сроки: семантика собирает подсказки 5–15 минут, и тишина в чате не должна
+  // выглядеть как зависание (вопрос владельца по задаче bc1f4911).
+  const taskText = `${title}\n${task.description || ''}`;
+  const workflowKind = workflows.detectWorkflow(taskText);
+  const taskDomain = workflows.extractDomain(taskText);
+  const reportUrl = notifyText.reportUrlFor(config.publicBaseUrl, taskId);
+  await notify.taskStarted({ title, taskId, workflow: workflowKind }).catch(() => {});
 
   try {
     // «Выполняется» в новой схеме доски — та же колонка «В работе» (очередь и
@@ -68,12 +76,26 @@ async function executeTask(task) {
       if (workflow.ok) {
         await yougile.setStatus(taskId, successStatus).catch(() => {});
         await db.finishTaskRun(taskId, 'done', { title, workflow: true });
+        await db
+          .saveTaskReport({ taskId, title, status: 'done', text: workflow.summary + successNote })
+          .catch((error) => console.warn(`⚠️ Не удалось сохранить отчёт: ${error.message}`));
         await notify
-          .taskDone({ title, taskId, summary: workflow.summary + successNote, draftId: workflow.draftId })
+          .taskDone({
+            title,
+            taskId,
+            summary: workflow.summary + successNote,
+            draftId: workflow.draftId,
+            workflow: workflowKind || undefined,
+            domain: taskDomain,
+            reportUrl,
+          })
           .catch(() => {});
       } else {
         await yougile.setStatus(taskId, 'Ошибка').catch(() => {});
         await db.finishTaskRun(taskId, 'error', { title, error: workflow.summary });
+        await db
+          .saveTaskReport({ taskId, title, status: 'error', text: workflow.summary })
+          .catch(() => {});
         await notify.taskError({ title, taskId, error: workflow.summary }).catch(() => {});
       }
       return;
@@ -89,6 +111,10 @@ async function executeTask(task) {
         outcome.review && !outcome.review.approved && outcome.review.remarks
           ? `\n\n⚠️ <b>Замечания рецензента:</b> ${outcome.review.remarks}`
           : '';
+      const reviewNotePlain =
+        outcome.review && !outcome.review.approved && outcome.review.remarks
+          ? `\n\n⚠️ Замечания рецензента: ${outcome.review.remarks}`
+          : '';
 
       await executors
         .addComment(taskId, `✅ Задача выполнена:\n\n${outcome.text}${reviewNote}`)
@@ -97,16 +123,17 @@ async function executeTask(task) {
         console.warn(`⚠️ Не удалось перевести в «${successStatus}»: ${error.message}`);
       });
       await db.finishTaskRun(taskId, 'done', { title });
+      await db
+        .saveTaskReport({ taskId, title, status: 'done', text: outcome.text + reviewNotePlain })
+        .catch((error) => console.warn(`⚠️ Не удалось сохранить отчёт: ${error.message}`));
       await notify
         .taskDone({
           title,
           taskId,
-          summary:
-            outcome.text +
-            (outcome.review && !outcome.review.approved
-              ? `\n\n⚠️ Рецензент оставил замечания — см. комментарий к задаче.`
-              : '') +
-            successNote,
+          summary: outcome.text + reviewNote,
+          workflow: workflowKind || undefined,
+          domain: taskDomain,
+          reportUrl,
         })
         .catch(() => {});
       console.log(`✅ Задача ${taskId} выполнена за ${outcome.steps} шагов`);
@@ -125,6 +152,14 @@ async function executeTask(task) {
 
     await yougile.setStatus(taskId, 'Ошибка').catch(() => {});
     await db.finishTaskRun(taskId, 'error', { title, error: reason });
+    await db
+      .saveTaskReport({
+        taskId,
+        title,
+        status: 'partial',
+        text: `${outcome.text && outcome.text.trim() ? `${outcome.text}\n\n` : ''}❗ ${reason}`,
+      })
+      .catch(() => {});
     await notify.taskIncomplete({ title, taskId, reason }).catch(() => {});
     console.warn(`⚠️ Задача ${taskId} не завершена: ${reason}`);
   } catch (error) {
@@ -133,6 +168,9 @@ async function executeTask(task) {
     await executors.addComment(taskId, `❌ Ошибка: ${error.message}`).catch(() => {});
     await yougile.setStatus(taskId, 'Ошибка').catch(() => {});
     await db.finishTaskRun(taskId, 'error', { title, error: error.message });
+    await db
+      .saveTaskReport({ taskId, title, status: 'error', text: `❌ Ошибка: ${error.message}` })
+      .catch(() => {});
     await notify.taskError({ title, taskId, error: error.message }).catch(() => {});
   }
 }

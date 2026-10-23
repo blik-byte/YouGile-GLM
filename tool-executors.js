@@ -643,6 +643,15 @@ async function createDocument(format, filename, title = '', content = '', tables
       };
     }
 
+    // Держим копию байтов: конвейеры дополнительно прикладывают файл к задаче
+    // YouGile (POST /api-v2/upload-file), чтобы таблица была видна в чате задачи.
+    let fileBuffer = null;
+    try {
+      fileBuffer = await fs.readFile(filePath);
+    } catch {
+      fileBuffer = null;
+    }
+
     const uploaded = await cloud.upload(filePath, finalName);
 
     if (!uploaded.success) {
@@ -663,6 +672,7 @@ async function createDocument(format, filename, title = '', content = '', tables
       filename: uploaded.filename || finalName,
       fileId: uploaded.fileId ?? uploaded.key ?? null,
       size: uploaded.size,
+      buffer: fileBuffer,
       link: uploaded.link || uploaded.shortlink,
       shortlink: uploaded.shortlink || null,
       downloadLink: uploaded.downloadLink || null,

@@ -36,6 +36,92 @@ async function main() {
   const executors = require('../tool-executors');
   const tools = require('../tools');
 
+  /* ===== Короткие уведомления и страница отчёта (просьба владельца №10) ===== */
+
+  await test('уведомление о выполнении: одна строка статуса и ссылка на отчёт', () => {
+    const notifyText = require('../lib/notify-text');
+    const body = notifyText.buildDoneBody({
+      workflow: 'seo_audit',
+      title: 'Проведи SEO-аудит сайта iek-snab.ru',
+      domain: 'iek-snab.ru',
+      reportUrl: notifyText.reportUrlFor('https://yougile-glm.onrender.com', 'task-1'),
+    });
+    assert.ok(body.includes('🔍 SEO-аудит iek-snab.ru выполнен.'), 'нет короткой строки статуса');
+    assert.ok(body.includes('https://yougile-glm.onrender.com/report/task-1'), 'нет ссылки на отчёт');
+    assert.ok(body.length <= 200, `уведомление слишком длинное (${body.length} символов)`);
+    assert.ok(!body.includes('Приоритетные рекомендации'), 'полный текст отчёта уезжает в Telegram');
+
+    const sem = notifyText.buildDoneBody({
+      workflow: 'semantics',
+      title: 'Собери черновик семантики по группе seo-wordpress',
+      draftId: '00dae4f0',
+      reportUrl: notifyText.reportUrlFor('https://yougile-glm.onrender.com', 'task-2'),
+    });
+    assert.ok(sem.includes('📝 Черновик семантики 00dae4f0 готов.'), 'нет строки черновика');
+  });
+
+  await test('уведомление «запущена» для семантики предупреждает о 5–15 минутах', () => {
+    const notifyText = require('../lib/notify-text');
+    const body = notifyText.buildStartedBody({ title: 'т', taskId: 'ид', workflow: 'semantics' });
+    assert.ok(body.includes('5–15 минут'), 'нет предсказания срока для семантики');
+    assert.ok(body.includes('два сообщения подряд'), 'не объяснено, почему в конце два сообщения');
+    const plain = notifyText.buildStartedBody({ title: 'т', taskId: 'ид', workflow: null });
+    assert.ok(!plain.includes('5–15 минут'), 'лишние обещания не-семантике');
+  });
+
+  await test('страница отчёта экранирует HTML и делает ссылки кликабельными', () => {
+    const { renderReportPage } = require('../lib/report-page');
+    const html = renderReportPage({
+      title: 'Задача <script>alert(1)</script>',
+      status: 'done',
+      text: 'Отчёт: https://example.com/x?a=1&b=2\nТег <b>не</b> должен работать',
+      updatedAt: new Date('2026-10-01T05:36:00Z'),
+    });
+    assert.ok(html.includes('&lt;script&gt;'), 'заголовок не экранирован');
+    assert.ok(html.includes('&lt;b&gt;'), 'текст не экранирован');
+    assert.ok(html.includes('<a href="https://example.com/x?a=1&amp;b=2"'), 'ссылка не кликабельна');
+    assert.ok(!html.includes('<script>alert'), 'XSS в странице отчёта');
+  });
+
+  await test('yougile-client.uploadFile шлёт multipart и возвращает ссылку', async () => {
+    process.env.YOUGILE_API_KEY = process.env.YOUGILE_API_KEY || 'test-key';
+    delete require.cache[require.resolve('../lib/config')];
+    delete require.cache[require.resolve('../lib/yougile-client')];
+    const yougile = require('../lib/yougile-client');
+    const originalFetch = global.fetch;
+    let captured = null;
+    global.fetch = async (url, options) => {
+      captured = { url: String(url), options };
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({
+            result: 'ok',
+            url: '/user-data/x.xlsx',
+            fullUrl: 'https://rocketup.yougile.com/user-data/x.xlsx',
+          }),
+      };
+    };
+    try {
+      const res = await yougile.uploadFile(Buffer.from('abc'), 'semantics.xlsx');
+      assert.ok(captured.url.includes('/api-v2/upload-file'), 'неверный эндпоинт');
+      assert.ok(captured.options.body instanceof FormData, 'нет multipart-формы');
+      assert.ok(!captured.options.headers['Content-Type'], 'Content-Type ломает boundary');
+      assert.equal(captured.options.headers.Authorization, 'Bearer test-key');
+      assert.equal(res.fullUrl, 'https://rocketup.yougile.com/user-data/x.xlsx');
+    } finally {
+      global.fetch = originalFetch;
+      delete require.cache[require.resolve('../lib/config')];
+      delete require.cache[require.resolve('../lib/yougile-client')];
+    }
+  });
+
+  await test('Telegram больше не шлёт отчёт на 900 символов (проверка кода)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'telegram-bot.js'), 'utf8');
+    assert.ok(!src.includes('slice(0, 900)'), 'taskDone по-прежнему шлёт полный отчёт');
+  });
+
   /* ================================================================== */
   console.log('— Извлечение текста со страниц (web_analysis) —');
   /* ================================================================== */

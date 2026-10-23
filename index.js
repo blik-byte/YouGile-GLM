@@ -28,6 +28,7 @@ const cors = require('cors');
 
 const { config, validate } = require('./lib/config');
 const dashboard = require('./lib/dashboard');
+const reportPage = require('./lib/report-page');
 const cloud = require('./lib/cloud');
 const modx = require('./lib/modx-client');
 const r2 = require('./r2-client');
@@ -259,6 +260,25 @@ app.post('/api/runs/:taskId/reset', requireAdmin, resetRunHandler);
 /* ------------------------------------------------------------------ */
 /* Раздача файлов из приватного бакета R2                              */
 /* ------------------------------------------------------------------ */
+
+/**
+ * GET /report/<id задачи>
+ *
+ * Страница полного отчёта по задаче: в Telegram уходит только короткая строка
+ * со ссылкой (просьба владельца), а подробности открываются одним кликом.
+ * Текст берётся из MongoDB (коллекция task_reports), куда его кладёт воркер.
+ * id задачи — UUID, угадать невозможно; дополнительных токенов не добавляем,
+ * как и у подписанных ссылок /files/.
+ */
+app.get('/report/:taskId', async (req, res) => {
+  const report = await db.getTaskReport(req.params.taskId).catch(() => null);
+
+  if (!report) {
+    return res.status(404).type('html').send(reportPage.renderNotFoundPage());
+  }
+
+  res.type('html').send(reportPage.renderReportPage(report, { publicBaseUrl: config.publicBaseUrl }));
+});
 
 /**
  * GET /files/<подпись>/<имя>?k=<ключ>

@@ -15,6 +15,7 @@ const TelegramBot = require('node-telegram-bot-api');
 const db = require('./db');
 const { config } = require('./lib/config');
 const { escapeTelegram, toStr } = require('./lib/text');
+const notifyText = require('./lib/notify-text');
 const yougile = require('./lib/yougile-client');
 
 let bot = null;
@@ -227,12 +228,10 @@ const notify = {
       `📧 <b>Новая задача из email!</b>\n\n📝 ${escapeTelegram(title)}\n📊 Создано задач: ${escapeTelegram(count)}`
     ),
 
-  taskStarted: ({ title, taskId }) =>
-    sendNotification(
-      `▶️ <b>Задача запущена</b>\n\n📝 ${escapeTelegram(title)}\n🆔 <code>${escapeTelegram(taskId)}</code>`
-    ),
+  taskStarted: ({ title, taskId, workflow }) =>
+    sendNotification(escapeTelegram(notifyText.buildStartedBody({ title, taskId, workflow }))),
 
-  taskDone: async ({ title, taskId, summary, draftId }) => {
+  taskDone: async ({ title, taskId, summary, draftId, workflow, domain, reportUrl }) => {
     // Если выполнена задача конвейера семантики — добавляем кнопку загрузки
     // частотностей и запоминаем сообщение: ответ файлом на него однозначно
     // определит черновик (без подписи и угадываний).
@@ -245,9 +244,15 @@ const notify = {
       };
     }
 
+    // В Telegram — только короткая строка статуса и ссылка на отчёт
+    // (просьба владельца: полный текст обрезался и не читался).
+    // Полный текст по-прежнему уходит комментарием в задачу YouGile
+    // и сохраняется на странице /report/<id>.
+    void summary;
     const sent = await sendNotification(
-      `✅ <b>Задача выполнена!</b>\n\n📝 ${escapeTelegram(title)}\n🆔 <code>${escapeTelegram(taskId)}</code>` +
-        (summary ? `\n\n${escapeTelegram(String(summary).slice(0, 900))}` : ''),
+      escapeTelegram(
+        notifyText.buildDoneBody({ workflow, title, domain, draftId, reportUrl })
+      ),
       options
     );
 
