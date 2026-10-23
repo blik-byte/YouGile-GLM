@@ -1732,6 +1732,92 @@ async function main() {
     });
   });
 
+  await test('mergeOwnerFrequencies: файл владельца заменяет группу, чужие группы не подмешиваются', async () => {
+    await withSemanticsStubs(async () => {
+      const semantics = require('../lib/semantics');
+      const draft = await semantics.buildDraft({ groups: 'seo-wordpress', expand: true });
+      assert.ok(draft.groups[0].queries.some((q) => q.freqSource === 'suggest'), 'кандидаты не созданы для теста');
+      const ownerBefore = draft.groups[0].ownerQueries;
+
+      // Файл владельца: его группа (неполная — устаревшие запросы он удалил) + чужая группа
+      const ExcelJS = require('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Лист1');
+      sheet.addRow(['Группа: SEO WordPress', 'Частотность', '«W»']);
+      const survivor = draft.groups[0].queries.find((q) => q.freqSource === 'owner').q;
+      sheet.addRow([survivor, 555, 4]);
+      sheet.addRow(['свежий запрос владельца', 30, 1]);
+      sheet.addRow(['Группа: SEO Tilda', 'Частотность', '«W»']);
+      sheet.addRow(['tilda seo', 100, 2]);
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      const result = await semantics.mergeOwnerFrequencies(draft.id, Buffer.from(buffer));
+      assert.strictEqual(result.success, true, result.error);
+      assert.strictEqual(result.updated, 1);
+      assert.strictEqual(result.added, 1);
+      assert.strictEqual(result.removedOwner, ownerBefore - 1, 'запросы, которых нет в файле, не убраны');
+      assert.ok(result.candidatesCleared > 0, 'кандидаты не очищены');
+      assert.ok(result.skippedGroups.some((t) => /Tilda/i.test(t)), 'чужая группа не попала в отчёт');
+
+      const updated = await semantics.getDraft(draft.id);
+      const queries = updated.groups[0].queries;
+      assert.strictEqual(queries.length, 2, 'группа не стала равной файлу');
+      assert.ok(!queries.some((q) => q.q === 'tilda seo'), 'чужой запрос подмешан в черновик');
+      assert.ok(!queries.some((q) => q.freqSource === 'suggest'), 'кандидаты остались');
+      assert.strictEqual(updated.groups[0].ownerQueries, 2);
+      assert.strictEqual(updated.totals.suggestedQueries, 0);
+    });
+  });
+
+  await test('mergeOwnerFrequencies: файл черновика от бота — заполненный кандидат принят, пустой отклонён', async () => {
+    await withSemanticsStubs(async () => {
+      const semantics = require('../lib/semantics');
+      const draft = await semantics.buildDraft({ groups: 'seo-wordpress', expand: true });
+      const owner = draft.groups[0].queries.find((q) => q.freqSource === 'owner');
+      const candidates = draft.groups[0].queries.filter((q) => q.freqSource === 'suggest');
+      assert.ok(candidates.length >= 2, 'мало кандидатов для теста');
+      const suggestBefore = candidates.length;
+      const ownerBefore = draft.groups[0].ownerQueries; // до мутаций merge (fake-db отдаёт тот же объект)
+
+      // Файл в формате, который генерирует сам бот (лист = группа, шапка, колонка источника)
+      const ExcelJS = require('exceljs');
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('SEO WordPress');
+      sheet.addRow(['Запрос', 'Частотность', 'Источник частотности', 'W', 'Интент', 'Статус']);
+      sheet.addRow([owner.q, String(owner.freq), 'владелец', '', 'general', 'в черновике']);
+      sheet.addRow([candidates[0].q, '150', 'кандидат (частотность не снята)', '', 'general', 'в черновике']);
+      sheet.addRow([candidates[1].q, '', 'кандидат (частотность не снята)', '', 'general', 'в черновике']);
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      const result = await semantics.mergeOwnerFrequencies(draft.id, Buffer.from(buffer));
+      assert.strictEqual(result.success, true, result.error);
+      assert.strictEqual(result.candidatesCleared, 1, 'пустой кандидат не отклонён');
+      assert.strictEqual(result.skippedGroups.length, 0);
+
+      const updated = await semantics.getDraft(draft.id);
+      const queries = updated.groups[0].queries;
+      const promoted = queries.find((q) => q.q === candidates[0].q);
+      assert.ok(promoted && promoted.freqSource === 'owner' && promoted.freq === 150, 'заполненный кандидат не принят');
+      assert.ok(!queries.some((q) => q.q === candidates[1].q), 'отклонённый кандидат остался');
+      assert.strictEqual(
+        queries.filter((q) => q.freqSource === 'suggest').length,
+        suggestBefore - 2, // один кандидат принят (стал owner), один отклонён
+        'задеты кандидаты, которых в файле не было'
+      );
+      assert.strictEqual(updated.groups[0].ownerQueries, ownerBefore + 1);
+    });
+  });
+
+  await test('buildDraft: по умолчанию кандидатов из подсказок нет (расширение выключено)', async () => {
+    await withSemanticsStubs(async () => {
+      const semantics = require('../lib/semantics');
+      const draft = await semantics.buildDraft({ groups: 'seo-wordpress' });
+      assert.strictEqual(draft.success, true, draft.error);
+      assert.strictEqual(draft.totals.suggestedQueries, 0, 'кандидаты появились при выключенном расширении');
+      assert.ok(draft.totals.ownerQueries > 0, 'нет запросов владельца из каталога');
+    });
+  });
+
   await test('parseCaptionReference понимает id черновика и uuid задачи', async () => {
     await withSemanticsStubs(async () => {
       const semantics = require('../lib/semantics');

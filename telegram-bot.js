@@ -210,13 +210,17 @@ async function importFrequenciesFile(chatId, draftId, fileId, fileName) {
 
   return safeSendMessage(
     chatId,
-    `✅ Частотности импортированы в черновик <code>${escapeTelegram(draftId)}</code>:\n` +
-      `обновлено запросов: ${result.updated}\nдобавлено новых: ${result.added}\n` +
-      `групп в файле: ${result.groups}` +
-      (result.unmatchedGroups && result.unmatchedGroups.length
-        ? `\n⚠️ пустые группы: ${escapeTelegram(result.unmatchedGroups.join(', '))}`
+    `✅ Файл импортирован в черновик <code>${escapeTelegram(draftId)}</code>:\n` +
+      `обновлено запросов: ${result.updated}\nдобавлено новых: ${result.added}` +
+      (result.removedOwner ? `\nубрано устаревших (нет в файле): ${result.removedOwner}` : '') +
+      (result.candidatesCleared ? `\nкандидатов из подсказок очищено: ${result.candidatesCleared}` : '') +
+      (result.skippedGroups && result.skippedGroups.length
+        ? `\n⚠️ Групп не из этого черновика — пропущено: ${escapeTelegram(result.skippedGroups.join(', '))}`
         : '') +
-      '\n\nЧерновик с твоими частотностями готов к одобрению: команда /approve и id заявки ' +
+      (result.emptyGroups && result.emptyGroups.length
+        ? `\n⚠️ пустые группы: ${escapeTelegram(result.emptyGroups.join(', '))}`
+        : '') +
+      '\n\nЧерновик теперь = содержимое твоего файла, готов к одобрению: команда /approve и id заявки ' +
       'пришли в уведомлении о заявке (или посмотри /approvals).'
   );
 }
