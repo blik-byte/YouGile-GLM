@@ -17,6 +17,7 @@ const { config } = require('./lib/config');
 const { escapeTelegram, toStr } = require('./lib/text');
 const notifyText = require('./lib/notify-text');
 const yougile = require('./lib/yougile-client');
+const { fetchWithTimeout, sleep } = require('./lib/http');
 
 let bot = null;
 
@@ -179,12 +180,40 @@ async function sendNotification(message, options = {}) {
 /* Импорт частотностей владельца                                       */
 /* ------------------------------------------------------------------ */
 
-/** Скачать файл из Telegram по file_id (file_id повторно используем). */
-async function downloadTelegramFile(fileId) {
-  const file = await bot.getFile(fileId);
-  const link = await bot.getFileLink(file.file_path);
-  const response = await fetch(link);
-  return Buffer.from(await response.arrayBuffer());
+/**
+ * Скачать файл из Telegram по file_id (file_id повторно используем).
+ *
+ * getFile может отказать СРАЗУ ПОСЛЕ ОТПРАВКИ файла с ошибкой «wrong file_id
+ * or the file is temporarily unavailable» — Telegram ещё не раздал файл
+ * (или сбой временный). Поэтому несколько попыток с нарастающей паузой.
+ * Боевой кейс: 2026-10-23 импорт частотностей упал на первом же getFile.
+ * «Запомненные» file_id (pending-состояние) со временем истекают — это тоже
+ * сюда: после исчерпания попыток вызывающий код просит файл заново.
+ */
+async function downloadTelegramFile(fileId, { attempts = 3 } = {}) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const file = await bot.getFile(fileId);
+      const link = await bot.getFileLink(file.file_path);
+      const response = await fetchWithTimeout(link);
+      if (!response.ok) {
+        throw new Error(`Telegram отдал HTTP ${response.status} при скачивании файла`);
+      }
+      return Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+      lastError = error;
+      const transient =
+        /wrong file_id|temporarily unavailable|ETELEGRAM: (400|429|5\d\d)|HTTP 5\d\d|timeout|fetch failed/i.test(
+          String(error && error.message ? error.message : error)
+        );
+      if (!transient || attempt === attempts) break;
+      await sleep(1500 * attempt);
+    }
+  }
+
+  throw lastError;
 }
 
 /**
@@ -455,27 +484,60 @@ function registerHandlers() {
     }
   });
 
+  // /deny имеет ДВА смысла: отзыв доступа к боту (chatId/username) и отклонение
+  // заявки на согласование (id — 8 hex-символов). Раньше оба обработчика
+  // срабатывали одновременно, и при отклонении заявки пользователь получал
+  // лишнее «не найден в списке доступа». Теперь один обработчик определяет
+  // назначение по формату id, с запасными вариантами.
+
+  /** Отзыв доступа к боту; true — действие выполнено или объяснено владельцу. */
+  async function denyAccess(chatId, target) {
+    if (isAdmin(target)) {
+      await safeSendMessage(
+        chatId,
+        `🛡️ <code>${escapeTelegram(target)}</code> задан через TELEGRAM_ADMIN_IDS — ` +
+          `отозвать можно только изменив переменную окружения на Render.`
+      );
+      return true;
+    }
+
+    const removed = await db.revokeAccess(target);
+    if (removed) {
+      await safeSendMessage(chatId, `✅ Доступ отозван у <code>${escapeTelegram(target)}</code>`);
+      return true;
+    }
+    return false;
+  }
+
   bot.onText(/\/deny(?:@\w+)?\s+(\S+)/, async (msg, match) => {
     if (!(await requireAdmin(msg))) return;
     const chatId = String(msg.chat.id);
     const target = match[1].replace(/^@/, '').trim();
 
-    if (isAdmin(target)) {
-      return safeSendMessage(
-        chatId,
-        `🛡️ <code>${escapeTelegram(target)}</code> задан через TELEGRAM_ADMIN_IDS — ` +
-          `отозвать можно только изменив переменную окружения на Render.`
-      );
-    }
-
     try {
-      const removed = await db.revokeAccess(target);
-      await safeSendMessage(
-        chatId,
-        removed
-          ? `✅ Доступ отозван у <code>${escapeTelegram(target)}</code>`
-          : `❓ <code>${escapeTelegram(target)}</code> не найден в списке доступа`
-      );
+      if (/^[0-9a-f]{8}$/i.test(target)) {
+        const approvals = require('./lib/approvals');
+        const decision = await approvals.decide(target.toLowerCase(), 'denied', chatId);
+
+        if (decision.ok) {
+          return safeSendMessage(
+            chatId,
+            `🚫 Заявка <code>${escapeTelegram(decision.request.id)}</code> отклонена. Действие не будет выполнено.`
+          );
+        }
+
+        // Не заявка — возможно, username или chatId: пробуем отозвать доступ
+        if (await denyAccess(chatId, target)) return;
+
+        return safeSendMessage(
+          chatId,
+          `❌ Заявка <code>${escapeTelegram(target)}</code> не найдена или уже обработана.\n` +
+            'Ожидающие заявки: /approvals · доступ к боту: /who'
+        );
+      }
+
+      if (await denyAccess(chatId, target)) return;
+      return safeSendMessage(chatId, `❓ <code>${escapeTelegram(target)}</code> не найден в списке доступа`);
     } catch (error) {
       await safeSendMessage(chatId, `❌ Ошибка: ${escapeTelegram(error.message)}`);
     }
@@ -500,28 +562,6 @@ function registerHandlers() {
         `✅ Заявка <code>${escapeTelegram(request.id)}</code> одобрена.\n` +
           `Действие: ${escapeTelegram(request.kindLabel)}\nОбъект: <code>${escapeTelegram(request.target)}</code>\n\n` +
           'Агент выполнит его при следующем шаге задачи. Заявка одноразовая.'
-      );
-    } catch (error) {
-      await safeSendMessage(chatId, `❌ Ошибка: ${escapeTelegram(error.message)}`);
-    }
-  });
-
-  bot.onText(/\/deny(?:@\w+)?\s+(\S+)/, async (msg, match) => {
-    if (!(await requireAdmin(msg))) return;
-    const chatId = String(msg.chat.id);
-    const id = match[1].trim().toLowerCase();
-
-    try {
-      const approvals = require('./lib/approvals');
-      const decision = await approvals.decide(id, 'denied', chatId);
-
-      if (!decision.ok) {
-        return safeSendMessage(chatId, `❌ ${escapeTelegram(decision.error)}`);
-      }
-
-      await safeSendMessage(
-        chatId,
-        `🚫 Заявка <code>${escapeTelegram(decision.request.id)}</code> отклонена. Действие не будет выполнено.`
       );
     } catch (error) {
       await safeSendMessage(chatId, `❌ Ошибка: ${escapeTelegram(error.message)}`);
@@ -717,6 +757,30 @@ function registerHandlers() {
       );
     }
 
+    // Telegram Bot API не отдаёт ботам файлы больше 20 МБ: getFile падает с
+    // «wrong file_id or the file is temporarily unavailable» (реже «file is too
+    // big»). Проверяем размер ЗАРАНЕЕ, чтобы владелец видел настоящую причину.
+    // Метаданные документа пишем в лог — они нужны для диагностики в Render.
+    const TG_FILE_LIMIT_BYTES = 20 * 1024 * 1024;
+    const fileSize = Number(msg.document.file_size) || 0;
+    const sizeMb = (fileSize / (1024 * 1024)).toFixed(2);
+
+    console.log(
+      `📎 Файл в чат ${chatId}: name="${fileName}" mime=${mime} size=${fileSize} ` +
+        `unique=${toStr(msg.document.file_unique_id)} msg=${msg.message_id}`
+    );
+
+    if (fileSize > TG_FILE_LIMIT_BYTES) {
+      return safeSendMessage(
+        chatId,
+        `❌ Файл «${escapeTelegram(fileName || 'без имени')}» весит ${sizeMb} МБ.\n` +
+          'Telegram Bot API не отдаёт ботам файлы больше 20 МБ — ошибка «wrong file_id…» именно об этом, с кодом бота всё в порядке.\n\n' +
+          'Что делать (любое):\n' +
+          '• пересохрани файл заново (Excel: Файл → Сохранить как → .xlsx; Google Sheets: Скачать → .xlsx) — лишние листы, картинки и кэш выгрузок часто добавляют десятки МБ;\n' +
+          '• либо пришли частотности частями — отдельными .xlsx по группам: каждый файл заменит запросы СВОИХ групп в черновике, остальные не тронет.'
+      );
+    }
+
     try {
       const semantics = require('./lib/semantics');
 
@@ -764,7 +828,20 @@ function registerHandlers() {
           'или с подписью — id черновика (8 символов) либо id задачи YouGile целиком.'
       );
     } catch (error) {
-      await safeSendMessage(chatId, `❌ Ошибка импорта файла: ${escapeTelegram(error.message)}`);
+      console.error(
+        `❌ Импорт частотностей: ${error.stack || error.message} | ` +
+          `doc: name="${fileName}" mime=${mime} size=${fileSize} unique=${toStr(msg.document.file_unique_id)} ` +
+          `file_id=${toStr(msg.document.file_id).slice(0, 16)}… msg=${msg.message_id} chat=${chatId}`
+      );
+      const fileLost = /wrong file_id|temporarily unavailable|file is too big/i.test(String(error.message || ''));
+      await safeSendMessage(
+        chatId,
+        fileLost
+          ? `❌ Telegram не отдал файл «${escapeTelegram(fileName || 'без имени')}» (${sizeMb} МБ) после нескольких попыток.\n` +
+            'Причины: файл не догрузился в Telegram, сбой на стороне Telegram или превышен лимит 20 МБ для ботов.\n' +
+            'Пришли .xlsx ещё раз (лучше ответом на уведомление о черновике). Если повторится — пересохрани файл заново и пришли уменьшенную копию. Подробности записаны в лог сервера.'
+          : `❌ Ошибка импорта файла: ${escapeTelegram(error.message)}`
+      );
     }
   });
 
@@ -787,9 +864,21 @@ function registerHandlers() {
         const pending = await db.takePendingState(chatId).catch(() => null);
 
         if (pending && pending.kind === 'file' && pending.file && pending.file.fileId) {
-          // Файл уже был прислан, но без однозначного адресата — теперь адресат есть
+          // Файл уже был прислан, но без однозначного адресата — теперь адресат есть.
+          // file_id «запомненного» файла Telegram может уже не отдавать — тогда
+          // выбор черновика НЕ теряем: запоминаем его как target и просим файл заново.
           await bot.answerCallbackQuery(query.id, { text: 'Импортирую файл…' }).catch(() => {});
-          return await importFrequenciesFile(chatId, draftId, pending.file.fileId, pending.file.fileName);
+          try {
+            return await importFrequenciesFile(chatId, draftId, pending.file.fileId, pending.file.fileName);
+          } catch (error) {
+            console.error(`❌ Импорт запомненного файла (freq:${draftId}): ${error.message}`);
+            await db.setPendingState(chatId, 'target', { draftId }).catch(() => {});
+            return safeSendMessage(
+              chatId,
+              `⚠️ Не удалось забрать ранее запомненный файл из Telegram (${escapeTelegram(error.message)}).\n` +
+                `Пришли .xlsx ещё раз следующим сообщением — импортирую в черновик <code>${escapeTelegram(draftId)}</code> (выбор запомнен на 30 минут).`
+            );
+          }
         }
 
         await db.setPendingState(chatId, 'target', { draftId });
@@ -824,7 +913,16 @@ function registerHandlers() {
         }
 
         await bot.answerCallbackQuery(query.id, { text: 'Импортирую…' }).catch(() => {});
-        return await importFrequenciesFile(chatId, draftId, pending.file.fileId, pending.file.fileName);
+        try {
+          return await importFrequenciesFile(chatId, draftId, pending.file.fileId, pending.file.fileName);
+        } catch (error) {
+          console.error(`❌ Импорт запомненного файла (pick:${draftId}): ${error.message}`);
+          return safeSendMessage(
+            chatId,
+            `⚠️ Не удалось забрать запомненный файл из Telegram (${escapeTelegram(error.message)}).\n` +
+              'Пришли .xlsx ещё раз — снова спрошу, к какому черновику его отнести.'
+          );
+        }
       }
 
       await bot.answerCallbackQuery(query.id).catch(() => {});
