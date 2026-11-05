@@ -14,20 +14,44 @@
     {
       "title": "Roadmap",
       "columns": [
-        { "title": "0. Техдолг", "color": "red", "order": 0 },
-        { "title": "1. Утренний доклад", "color": "orange", "order": 1 },
-        { "title": "2. Мониторинги", "color": "yellow", "order": 2 },
-        { "title": "3. Контент-конвейер", "color": "green", "order": 3 },
-        { "title": "4. Kwork и деньги", "color": "blue", "order": 4 },
-        { "title": "5. Оркестрация", "color": "purple", "order": 5 },
-        { "title": "6. Доработки", "color": "gray", "order": 6 }
+        {
+          "title": "0. Техдолг",
+          "order": 0
+        },
+        {
+          "title": "1. Утренний доклад",
+          "order": 1
+        },
+        {
+          "title": "2. Мониторинги",
+          "order": 2
+        },
+        {
+          "title": "3. Контент-конвейер",
+          "order": 3
+        },
+        {
+          "title": "4. Kwork и деньги",
+          "order": 4
+        },
+        {
+          "title": "5. Оркестрация",
+          "order": 5
+        },
+        {
+          "title": "6. Доработки",
+          "order": 6
+        }
       ],
       "tasks": [
         {
           "code": "TD-01",
           "column": "0. Техдолг",
           "title": "C3: обработчик polling_error в telegram-bot.js",
-          "labels": ["critical", "stability"],
+          "labels": [
+            "critical",
+            "stability"
+          ],
           "description": "[plan:TD-01]\n\nИсточник: AUDIT-YouGile-GLM.md (C3, не закрыт в v2.0).\n\nФайл: telegram-bot.js\n\nСейчас нет обработчика bot.on('polling_error', ...). Любой сбой сети Telegram = unhandled 'error' event = process.exit(1) и падение всего приложения.\n\nВ одном процессе живут email-worker, task-executor, вебхуки. Смерть процесса = все воркеры.",
           "checklist": [
             "Добавить bot.on('polling_error', err => { logger.warn(...); }) с логированием, а не падением",
@@ -40,7 +64,10 @@
           "code": "TD-02",
           "column": "0. Техдолг",
           "title": "H9: graceful shutdown на SIGTERM/SIGINT",
-          "labels": ["critical", "stability"],
+          "labels": [
+            "critical",
+            "stability"
+          ],
           "description": "[plan:TD-02]\n\nИсточник: AUDIT-YouGile-GLM.md (H9, не закрыт в v2.0).\n\nRender отправляет SIGTERM при каждом деплое и уходе в спячку. Без обработчиков процесс убивается мгновенно: задачи обрываются на полуслове, MongoDB-соединения не закрываются, письма остаются в промежуточном состоянии.",
           "checklist": [
             "process.on('SIGTERM', async () => { ... }) с закрытием MongoClient, IMAP, bot.stopPolling()",
@@ -53,7 +80,10 @@
           "code": "TD-03",
           "column": "0. Техдолг",
           "title": "M13: включить rejectUnauthorized в IMAP",
-          "labels": ["high", "security"],
+          "labels": [
+            "high",
+            "security"
+          ],
           "description": "[plan:TD-03]\n\nИсточник: AUDIT-YouGile-GLM.md (M13, не закрыт в v2.0).\n\nФайл: email-worker.js:26 - tls: { rejectUnauthorized: false } - проверка сертификата почтового сервера отключена. Риск MITM-атаки.",
           "checklist": [
             "Удалить rejectUnauthorized: false (или выставить true явно)",
@@ -66,7 +96,10 @@
           "code": "TD-04",
           "column": "0. Техдолг",
           "title": "M14: сузить фильтр писем по теме",
-          "labels": ["high", "logic"],
+          "labels": [
+            "high",
+            "logic"
+          ],
           "description": "[plan:TD-04]\n\nИсточник: AUDIT-YouGile-GLM.md (M14, не закрыт в v2.0).\n\nФайл: email-worker.js:162 - subject.includes('Задачи') слишком широкий. Зацепит любое письмо со словом 'задачи'.",
           "checklist": [
             "Уточнить фильтр: [TASK] в начале темы (case-sensitive, как задумано)",
@@ -79,7 +112,10 @@
           "code": "TD-05",
           "column": "0. Техдолг",
           "title": "M25: защита от наложения интервалов в task-executor",
-          "labels": ["medium", "stability"],
+          "labels": [
+            "medium",
+            "stability"
+          ],
           "description": "[plan:TD-05]\n\nИсточник: AUDIT-YouGile-GLM.md (M25, частично закрыт в v2.0 блокировками в MongoDB).\n\nsetInterval(checkTasksForExecution, 30s). Если цикл > 30 с, может запуститься второй параллельно.",
           "checklist": [
             "Добавить флаг isScanning в task-executor: если true - пропустить новый тик setInterval",
@@ -91,7 +127,10 @@
           "code": "TD-06",
           "column": "0. Техдолг",
           "title": "PDF-парсер: извлечение текста из PDF",
-          "labels": ["high", "feature"],
+          "labels": [
+            "high",
+            "feature"
+          ],
           "description": "[plan:TD-06]\n\nИсточник: README.md раздел 'Планы'.\n\nСейчас web_analysis возвращает явную ошибку для PDF. Нужно добавить поддержку.",
           "checklist": [
             "Выбрать библиотеку: pdf-parse или pdfjs-dist",
@@ -105,7 +144,10 @@
           "code": "TD-07",
           "column": "0. Техдолг",
           "title": "Puppeteer: скриншоты и работа с JS-сайтами",
-          "labels": ["medium", "feature"],
+          "labels": [
+            "medium",
+            "feature"
+          ],
           "description": "[plan:TD-07]\n\nИсточник: README.md раздел 'Планы'.\n\nДля сайтов с клиентским рендерингом (SPA) web_analysis не видит контент. Нужен headless Chrome.",
           "checklist": [
             "Добавить puppeteer или playwright в зависимости",
@@ -120,7 +162,10 @@
           "code": "TD-08",
           "column": "0. Техдолг",
           "title": "Whisper: голосовой ввод в Telegram",
-          "labels": ["low", "feature"],
+          "labels": [
+            "low",
+            "feature"
+          ],
           "description": "[plan:TD-08]\n\nИсточник: README.md раздел 'Планы'.\n\nГолосовые сообщения в TG -> транскрибация -> задача.",
           "checklist": [
             "Выбрать API: OpenAI Whisper, Groq Whisper, локальный whisper.cpp",
@@ -134,7 +179,10 @@
           "code": "TD-09",
           "column": "0. Техдолг",
           "title": "Шаблоны задач с эволюционирующими промптами",
-          "labels": ["medium", "feature"],
+          "labels": [
+            "medium",
+            "feature"
+          ],
           "description": "[plan:TD-09]\n\nИсточник: README.md раздел 'Планы'.\n\nПромпты в prompts/ статичны. Нужен механизм, чтобы промпт учился на результатах.",
           "checklist": [
             "Продумать схему: где хранить 'фидбек', как агрегировать",
@@ -148,7 +196,10 @@
           "code": "TD-10",
           "column": "0. Техдолг",
           "title": "Разделение воркеров на отдельные Render-сервисы",
-          "labels": ["medium", "infra"],
+          "labels": [
+            "medium",
+            "infra"
+          ],
           "description": "[plan:TD-10]\n\nИсточник: README.md раздел 'Планы'.\n\nСейчас все воркеры в одном dyno. Если один падает - всё падает.",
           "checklist": [
             "Выделить email-worker в отдельный сервис",
@@ -164,7 +215,10 @@
           "code": "P1-01",
           "column": "1. Утренний доклад",
           "title": "Настроить OAuth Google Search Console API",
-          "labels": ["high", "infra"],
+          "labels": [
+            "high",
+            "infra"
+          ],
           "description": "[plan:P1-01]\n\nИсточник: план Фазы 1.\n\nДля утреннего доклада нужен доступ к данным GSC. OAuth2 от Google - официальный способ.",
           "checklist": [
             "Создать проект в Google Cloud Console",
@@ -179,7 +233,10 @@
           "code": "P1-02",
           "column": "1. Утренний доклад",
           "title": "Настроить Яндекс.Вебмастер API",
-          "labels": ["high", "infra"],
+          "labels": [
+            "high",
+            "infra"
+          ],
           "description": "[plan:P1-02]\n\nИсточник: план Фазы 1.\n\nДля утреннего доклада по российским проектам.",
           "checklist": [
             "Создать приложение на oauth.yandex.ru",
@@ -192,7 +249,10 @@
           "code": "P1-03",
           "column": "1. Утренний доклад",
           "title": "Коннектор Google Search Console (lib/gsc-client.js)",
-          "labels": ["high", "code"],
+          "labels": [
+            "high",
+            "code"
+          ],
           "description": "[plan:P1-03]\n\nИсточник: план Фазы 1.\n\nАналогично lib/yougile-client.js и lib/modx-client.js.",
           "checklist": [
             "Использовать lib/http.js с таймаутами и ретраями",
@@ -205,7 +265,10 @@
           "code": "P1-04",
           "column": "1. Утренний доклад",
           "title": "Коннектор Яндекс.Вебмастер (lib/webmaster-client.js)",
-          "labels": ["high", "code"],
+          "labels": [
+            "high",
+            "code"
+          ],
           "description": "[plan:P1-04]\n\nИсточник: план Фазы 1.",
           "checklist": [
             "Использовать lib/http.js",
@@ -217,7 +280,10 @@
           "code": "P1-05",
           "column": "1. Утренний доклад",
           "title": "Скрипт утреннего доклада (8:30 MSK cron)",
-          "labels": ["high", "code"],
+          "labels": [
+            "high",
+            "code"
+          ],
           "description": "[plan:P1-05]\n\nИсточник: план Фазы 1.\n\nЗапуск через cron-job.org по расписанию.",
           "checklist": [
             "Эндпоинт POST /cron/morning-report с ADMIN_TOKEN",
@@ -231,7 +297,10 @@
           "code": "P1-06",
           "column": "1. Утренний доклад",
           "title": "Агрегация аномалий в утреннем докладе",
-          "labels": ["high", "logic"],
+          "labels": [
+            "high",
+            "logic"
+          ],
           "description": "[plan:P1-06]\n\nИсточник: план Фазы 1.\n\nGLM-анализ: что изменилось, что требует внимания.",
           "checklist": [
             "Выявлять падения кликов/показов/позиций > X% (порог согласовать - начнём с 20%)",
@@ -245,7 +314,10 @@
           "code": "P1-07",
           "column": "1. Утренний доклад",
           "title": "Доставка утреннего доклада: TG + YouGile",
-          "labels": ["high", "code"],
+          "labels": [
+            "high",
+            "code"
+          ],
           "description": "[plan:P1-07]\n\nИсточник: план Фазы 1.",
           "checklist": [
             "Короткая версия в TG (5-7 строк)",
@@ -259,7 +331,10 @@
           "code": "P1-08",
           "column": "1. Утренний доклад",
           "title": "Согласовать формат утреннего доклада",
-          "labels": ["high", "docs"],
+          "labels": [
+            "high",
+            "docs"
+          ],
           "description": "[plan:P1-08]\n\nИсточник: план Фазы 1.\n\nПеред написанием кода согласовать с владельцем.",
           "checklist": [
             "Длина TG-сообщения (строки)",
@@ -273,7 +348,10 @@
           "code": "P2-01",
           "column": "2. Мониторинги",
           "title": "RSS-монитор новостей",
-          "labels": ["high", "feature"],
+          "labels": [
+            "high",
+            "feature"
+          ],
           "description": "[plan:P2-01]\n\nИсточник: план Фазы 2.\n\nСамый простой и надёжный вид мониторинга.",
           "checklist": [
             "Выбрать RSS-библиотеку (rss-parser)",
@@ -287,7 +365,10 @@
           "code": "P2-02",
           "column": "2. Мониторинги",
           "title": "Монитор конкурентов (еже/еженедельно)",
-          "labels": ["high", "feature"],
+          "labels": [
+            "high",
+            "feature"
+          ],
           "description": "[plan:P2-02]\n\nИсточник: план Фазы 2.\n\nСогласовать список конкурентов и что отслеживать.",
           "checklist": [
             "Список доменов конкурентов (согласовать)",
@@ -301,7 +382,10 @@
           "code": "P2-03",
           "column": "2. Мониторинги",
           "title": "PageSpeed Insights API: еженедельный отчёт",
-          "labels": ["medium", "feature"],
+          "labels": [
+            "medium",
+            "feature"
+          ],
           "description": "[plan:P2-03]\n\nИсточник: план Фазы 2.\n\nAPI бесплатный с ключом.",
           "checklist": [
             "Получить API-ключ Google",
@@ -315,7 +399,10 @@
           "code": "P2-04",
           "column": "2. Мониторинги",
           "title": "'Падающие страницы': мониторинг просевших URL",
-          "labels": ["high", "feature"],
+          "labels": [
+            "high",
+            "feature"
+          ],
           "description": "[plan:P2-04]\n\nИсточник: план Фазы 2.\n\nИспользует данные из P1-03 (GSC).",
           "checklist": [
             "Сравнение: последняя неделя vs предыдущая",
@@ -329,7 +416,10 @@
           "code": "P2-05",
           "column": "2. Мониторинги",
           "title": "Согласовать формат дайджеста новостей",
-          "labels": ["medium", "docs"],
+          "labels": [
+            "medium",
+            "docs"
+          ],
           "description": "[plan:P2-05]\n\nИсточник: план Фазы 2.",
           "checklist": [
             "Периодичность дайджеста (ежедневно/утром + вечером)",
@@ -342,7 +432,10 @@
           "code": "P2-06",
           "column": "2. Мониторинги",
           "title": "Согласовать формат отчёта PageSpeed",
-          "labels": ["low", "docs"],
+          "labels": [
+            "low",
+            "docs"
+          ],
           "description": "[plan:P2-06]\n\nИсточник: план Фазы 2.",
           "checklist": [
             "Какие метрики выводить (LCP, FID/INP, CLS, TTFB, total score)",
@@ -354,7 +447,10 @@
           "code": "P3-01",
           "column": "3. Контент-конвейер",
           "title": "Генерация тем для статей",
-          "labels": ["high", "feature"],
+          "labels": [
+            "high",
+            "feature"
+          ],
           "description": "[plan:P3-01]\n\nИсточник: план Фазы 3.\n\nАгент-контенщик: темы + обоснование + источники.",
           "checklist": [
             "Специализированный промпт в prompts/content-planner.js",
@@ -368,7 +464,10 @@
           "code": "P3-02",
           "column": "3. Контент-конвейер",
           "title": "Согласование тем в Telegram",
-          "labels": ["high", "feature"],
+          "labels": [
+            "high",
+            "feature"
+          ],
           "description": "[plan:P3-02]\n\nИсточник: план Фазы 3.\n\nHuman-in-the-loop перед написанием.",
           "checklist": [
             "TG-уведомление со списком тем",
@@ -382,7 +481,10 @@
           "code": "P3-03",
           "column": "3. Контент-конвейер",
           "title": "Написание статей по согласованным темам",
-          "labels": ["high", "feature"],
+          "labels": [
+            "high",
+            "feature"
+          ],
           "description": "[plan:P3-03]\n\nИсточник: план Фазы 3.\n\nОсновной агент-писатель. Использует GLM или локальный Qwen3.5:9B.",
           "checklist": [
             "Промпт с учётом согласованной структуры",
@@ -397,7 +499,10 @@
           "code": "P3-04",
           "column": "3. Контент-конвейер",
           "title": "ТЗ на картинки + промпты для Qwen",
-          "labels": ["high", "feature"],
+          "labels": [
+            "high",
+            "feature"
+          ],
           "description": "[plan:P3-04]\n\nИсточник: план Фазы 3.\n\nПараллельно с написанием статьи.",
           "checklist": [
             "По каждой секции статьи - ТЗ на картинку",
@@ -410,7 +515,10 @@
           "code": "P3-05",
           "column": "3. Контент-конвейер",
           "title": "Генерация картинок (полуавтомат через Qwen desktop)",
-          "labels": ["medium", "feature"],
+          "labels": [
+            "medium",
+            "feature"
+          ],
           "description": "[plan:P3-05]\n\nИсточник: план Фазы 3.\n\nПока полуавтомат: владелец копирует промпты из P3-04 в приложение Qwen.",
           "checklist": [
             "Полуавтомат: TG присылает промпты с кнопкой 'скопировать'",
@@ -424,7 +532,10 @@
           "code": "P3-06",
           "column": "3. Контент-конвейер",
           "title": "Мета-описание и SEO-оптимизация",
-          "labels": ["high", "feature"],
+          "labels": [
+            "high",
+            "feature"
+          ],
           "description": "[plan:P3-06]\n\nИсточник: план Фазы 3.\n\nФинальная проверка перед публикацией.",
           "checklist": [
             "Title (до 60 символов, с ключом)",
@@ -439,7 +550,10 @@
           "code": "P3-07",
           "column": "3. Контент-конвейер",
           "title": "Рецензент (другая модель)",
-          "labels": ["high", "quality"],
+          "labels": [
+            "high",
+            "quality"
+          ],
           "description": "[plan:P3-07]\n\nИсточник: план Фазы 3.\n\nПринцип: автор и рецензент - разные модели для выявления слепых зон.",
           "checklist": [
             "Рецензент: GLM если автор был локальный Qwen, и наоборот",
@@ -453,7 +567,10 @@
           "code": "P3-08",
           "column": "3. Контент-конвейер",
           "title": "Согласование статьи владельцем + публикация в MODX",
-          "labels": ["high", "feature"],
+          "labels": [
+            "high",
+            "feature"
+          ],
           "description": "[plan:P3-08]\n\nИсточник: план Фазы 3.\n\nАналогично семантике: /approve <id>.",
           "checklist": [
             "TG: финальный вид статьи + мета + картинки",
@@ -468,7 +585,10 @@
           "code": "P3-09",
           "column": "3. Контент-конвейер",
           "title": "Post-publish sanity-check",
-          "labels": ["medium", "quality"],
+          "labels": [
+            "medium",
+            "quality"
+          ],
           "description": "[plan:P3-09]\n\nИсточник: план Фазы 3.\n\nПроверка после публикации (через 1-7 дней).",
           "checklist": [
             "Индексация в Google и Яндексе (запрос по site:)",
@@ -481,7 +601,10 @@
           "code": "P4-01",
           "column": "4. Kwork и деньги",
           "title": "Kwork-монитор (полуавтомат)",
-          "labels": ["high", "feature"],
+          "labels": [
+            "high",
+            "feature"
+          ],
           "description": "[plan:P4-01]\n\nИсточник: план Фазы 4.\n\nУ Kwork нет публичного API покупателя. Используем Kimi Work + WebBridge или ручной парсинг.",
           "checklist": [
             "Определить раздел/категорию Kwork для мониторинга",
@@ -495,7 +618,10 @@
           "code": "P4-02",
           "column": "4. Kwork и деньги",
           "title": "Согласовать критерии отбора проектов Kwork",
-          "labels": ["high", "docs"],
+          "labels": [
+            "high",
+            "docs"
+          ],
           "description": "[plan:P4-02]\n\nИсточник: план Фазы 4.\n\nБез этих критериев агент будет импровизировать.",
           "checklist": [
             "Тематика: только SEO, SEO+контент, смежное?",
@@ -510,7 +636,10 @@
           "code": "P4-03",
           "column": "4. Kwork и деньги",
           "title": "Черновик ответа-заявки",
-          "labels": ["high", "feature"],
+          "labels": [
+            "high",
+            "feature"
+          ],
           "description": "[plan:P4-03]\n\nИсточник: план Фазы 4.\n\nАгент пишет заявку от твоего имени, но не публикует.",
           "checklist": [
             "Промпт: вежливый, конкретный, показывает экспертизу",
@@ -523,7 +652,10 @@
           "code": "P4-04",
           "column": "4. Kwork и деньги",
           "title": "Кнопка 'Разместить' в Telegram",
-          "labels": ["high", "feature"],
+          "labels": [
+            "high",
+            "feature"
+          ],
           "description": "[plan:P4-04]\n\nИсточник: план Фазы 4.\n\nHuman-in-the-loop обязателен: автоматическая публикация = риск антифрода.",
           "checklist": [
             "TG: проект + черновик заявки",
@@ -537,7 +669,10 @@
           "code": "P4-05",
           "column": "4. Kwork и деньги",
           "title": "Черновики счетов и актов",
-          "labels": ["low", "feature"],
+          "labels": [
+            "low",
+            "feature"
+          ],
           "description": "[plan:P4-05]\n\nИсточник: план Фазы 4.\n\nПо завершённым задачам в YG.",
           "checklist": [
             "Шаблон счета/акта в docx",
@@ -551,7 +686,10 @@
           "code": "P4-06",
           "column": "4. Kwork и деньги",
           "title": "Черновики ответов клиентам",
-          "labels": ["low", "feature"],
+          "labels": [
+            "low",
+            "feature"
+          ],
           "description": "[plan:P4-06]\n\nИсточник: план Фазы 4.\n\nДля входящих писем/сообщений.",
           "checklist": [
             "Мониторинг отдельного ящика для клиентов",
@@ -565,7 +703,10 @@
           "code": "P4-07",
           "column": "4. Kwork и деньги",
           "title": "Пятничный отчёт 'дебиторка и незакрытые задачи'",
-          "labels": ["medium", "feature"],
+          "labels": [
+            "medium",
+            "feature"
+          ],
           "description": "[plan:P4-07]\n\nИсточник: план Фазы 4.\n\nАгрегация по YG + финансам.",
           "checklist": [
             "Задачи в статусе 'На проверку' > 3 дней - алерт",
@@ -578,7 +719,10 @@
           "code": "P5-01",
           "column": "5. Оркестрация",
           "title": "Модуль board-steward.js",
-          "labels": ["critical", "code"],
+          "labels": [
+            "critical",
+            "code"
+          ],
           "description": "[plan:P5-01]\n\nИсточник: план Фазы 5.\n\nОснова стюарда. Реализация логики применения планов.",
           "checklist": [
             "Функция applyPlan(planJson) - основной метод",
@@ -593,7 +737,10 @@
           "code": "P5-02",
           "column": "5. Оркестрация",
           "title": "Telegram-команды /steward, /project, /board, /column, /task",
-          "labels": ["high", "code"],
+          "labels": [
+            "high",
+            "code"
+          ],
           "description": "[plan:P5-02]\n\nИсточник: план Фазы 5.\n\nИнтерфейс для точечных операций.",
           "checklist": [
             "/steward apply <url> - применить план",
@@ -609,7 +756,10 @@
           "code": "P5-03",
           "column": "5. Оркестрация",
           "title": "Парсер plan-файлов (lib/steward-plans.js)",
-          "labels": ["high", "code"],
+          "labels": [
+            "high",
+            "code"
+          ],
           "description": "[plan:P5-03]\n\nИсточник: план Фазы 5.\n\nВалидация JSON по схеме.",
           "checklist": [
             "JSON-Schema для валидации",
@@ -622,7 +772,10 @@
           "code": "P5-04",
           "column": "5. Оркестрация",
           "title": "Коллекция steward_registry в MongoDB",
-          "labels": ["high", "infra"],
+          "labels": [
+            "high",
+            "infra"
+          ],
           "description": "[plan:P5-04]\n\nИсточник: план Фазы 5.\n\nДля идемпотентности и аудита.",
           "checklist": [
             "Схема: { planCode, yougileId, type, lastSyncAt, planHash }",
@@ -635,7 +788,10 @@
           "code": "P5-05",
           "column": "5. Оркестрация",
           "title": "Идемпотентность по [plan:CODE] маркерам",
-          "labels": ["high", "logic"],
+          "labels": [
+            "high",
+            "logic"
+          ],
           "description": "[plan:P5-05]\n\nИсточник: план Фазы 5.\n\nКлючевая логика стюарда.",
           "checklist": [
             "Первая строка описания задачи: [plan:CODE]",
@@ -650,7 +806,10 @@
           "code": "P5-06",
           "column": "5. Оркестрация",
           "title": "Эндпоинт POST /steward/apply для CI",
-          "labels": ["medium", "code"],
+          "labels": [
+            "medium",
+            "code"
+          ],
           "description": "[plan:P5-06]\n\nИсточник: план Фазы 5.\n\nПрименение плана из GitHub Actions.",
           "checklist": [
             "Эндпоинт с X-Admin-Token",
@@ -664,7 +823,10 @@
           "code": "P5-07",
           "column": "5. Оркестрация",
           "title": "AutoClaw-роли для локальных моделей",
-          "labels": ["high", "infra"],
+          "labels": [
+            "high",
+            "infra"
+          ],
           "description": "[plan:P5-07]\n\nИсточник: план Фазы 5.\n\nНастройка агентов в AutoClaw с разными моделями.",
           "checklist": [
             "Роль 'Оркестратор' -> GLM (облако)",
@@ -679,7 +841,10 @@
           "code": "P5-08",
           "column": "5. Оркестрация",
           "title": "JSON-контракты между агентами",
-          "labels": ["high", "code"],
+          "labels": [
+            "high",
+            "code"
+          ],
           "description": "[plan:P5-08]\n\nИсточник: план Фазы 5.\n\nАгенты общаются структурированно, а не свободным текстом.",
           "checklist": [
             "Schema для меж-агентных сообщений (JSON Schema)",
@@ -693,7 +858,10 @@
           "code": "P5-09",
           "column": "5. Оркестрация",
           "title": "Watchdog над пайплайном",
-          "labels": ["high", "stability"],
+          "labels": [
+            "high",
+            "stability"
+          ],
           "description": "[plan:P5-09]\n\nИсточник: план Фазы 5.\n\nСледит, что конвейер жив.",
           "checklist": [
             "Проверка: последний утренний доклад не старше 25 часов",
@@ -707,7 +875,10 @@
           "code": "P5-10",
           "column": "5. Оркестрация",
           "title": "Еженедельная ретроспектива",
-          "labels": ["medium", "feature"],
+          "labels": [
+            "medium",
+            "feature"
+          ],
           "description": "[plan:P5-10]\n\nИсточник: план Фазы 5.\n\nGLM анализирует неделю работы пайплайна.",
           "checklist": [
             "Агрегация: задач сделано, ошибок, времени сэкономлено",
@@ -721,7 +892,10 @@
           "code": "P5-11",
           "column": "5. Оркестрация",
           "title": "Публичные мониторинги на GLM Scheduled",
-          "labels": ["medium", "infra"],
+          "labels": [
+            "medium",
+            "infra"
+          ],
           "description": "[plan:P5-11]\n\nИсточник: план Фазы 5.\n\nИспользуем бесплатный облачный cron GLM для публичных данных.",
           "checklist": [
             "Перенести мониторинг конкурентов (P2-02) на GLM Scheduled (если публично)",
@@ -735,7 +909,10 @@
           "code": "P5-12",
           "column": "5. Оркестрация",
           "title": "Kimi Work для Kwork/Wordstat",
-          "labels": ["medium", "infra"],
+          "labels": [
+            "medium",
+            "infra"
+          ],
           "description": "[plan:P5-12]\n\nИсточник: план Фазы 5.\n\nKimi Work + WebBridge для сайтов без API.",
           "checklist": [
             "Установить Kimi Work на стационар (Win10, 16 RAM)",
@@ -750,7 +927,10 @@
           "code": "P5-13",
           "column": "5. Оркестрация",
           "title": "DeepSeek Harness как каркас коннекторов",
-          "labels": ["low", "infra"],
+          "labels": [
+            "low",
+            "infra"
+          ],
           "description": "[plan:P5-13]\n\nИсточник: план Фазы 5.\n\nЕсли штатных инструментов не хватит.",
           "checklist": [
             "Изучить архитектуру: всё - плагин",
@@ -763,7 +943,10 @@
           "code": "P6-01",
           "column": "6. Доработки",
           "title": "Репурпозинг статей в Telegram/VK",
-          "labels": ["low", "feature"],
+          "labels": [
+            "low",
+            "feature"
+          ],
           "description": "[plan:P6-01]\n\nИсточник: план Фазы 6.\n\nИз опубликованной статьи - пост в соцсети.",
           "checklist": [
             "Промпт: статья -> короткий пост (500-1000 символов)",
@@ -776,7 +959,10 @@
           "code": "P6-02",
           "column": "6. Доработки",
           "title": "Почтовый ассистент (черновики ответов)",
-          "labels": ["low", "feature"],
+          "labels": [
+            "low",
+            "feature"
+          ],
           "description": "[plan:P6-02]\n\nИсточник: план Фазы 6.\n\nРасширение P4-06.",
           "checklist": [
             "Классификация входящих: важное / спам / FYI",
@@ -789,7 +975,10 @@
           "code": "P6-03",
           "column": "6. Доработки",
           "title": "Раскладка файлов по папкам (Kimi Work)",
-          "labels": ["low", "feature"],
+          "labels": [
+            "low",
+            "feature"
+          ],
           "description": "[plan:P6-03]\n\nИсточник: план Фазы 6.\n\nПрямая ниша Kimi Work: локальные файлы.",
           "checklist": [
             "Согласовать структуру папок с владельцем",
@@ -802,7 +991,10 @@
           "code": "P6-04",
           "column": "6. Доработки",
           "title": "База знаний (Obsidian/Notion)",
-          "labels": ["low", "feature"],
+          "labels": [
+            "low",
+            "feature"
+          ],
           "description": "[plan:P6-04]\n\nИсточник: план Фазы 6.\n\nПо каждой завершённой задаче - карточка-вывод.",
           "checklist": [
             "Выбрать: Obsidian (локально) или Notion (облако)",
@@ -815,7 +1007,10 @@
           "code": "P6-05",
           "column": "6. Доработки",
           "title": "Дашборд/лента (если понадобится)",
-          "labels": ["low", "feature"],
+          "labels": [
+            "low",
+            "feature"
+          ],
           "description": "[plan:P6-05]\n\nИсточник: план Фазы 6.\n\nОтложенное решение - сначала TG+YG.",
           "checklist": [
             "Понять, что TG+YG не хватает",
