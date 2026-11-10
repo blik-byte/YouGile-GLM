@@ -98,6 +98,20 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Применение плана steward к живой доске. Доступно только администратору: пишет в YouGile.
+// Тело: { plan?: "ai-agents-yg.json", dryRun?: boolean }
+app.post('/steward/apply', requireAdmin, async (req, res) => {
+  try {
+    const admin = require('./lib/yougile-admin');
+    const body = req.body || {};
+    const plan = admin.loadPlan(body.plan || 'ai-agents-yg.json');
+    const stats = await admin.applyPlan(plan, { dryRun: Boolean(body.dryRun) });
+    res.json(stats);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Состояние интеграции с MODX: доступен ли коннектор и в каком он режиме
 app.get('/api/modx/status', requireAdmin, async (req, res) => {
   try {
@@ -288,7 +302,7 @@ app.get('/report/:taskId', async (req, res) => {
  *                  внешних сервисов и платёжных карт);
  *   остальное    — ключ объекта Cloudflare R2.
  *
- * Подпись — HMAC-SHA256 от ключа на ADMIN_TOKEN/FILES_SECRET: зная подпись одной
+ * Подпись — HMAC-SHA256 от секрета ссылок и секрета файлов: зная подпись одной
  * ссылки, нельзя получить другую, а перебрать ключи без секрета невозможно.
  * Срок действия не ограничен — ссылки попадают в комментарии задач YouGile,
  * которые читают спустя недели.
@@ -302,7 +316,7 @@ app.get('/files/:signature/:name', async (req, res) => {
     return res
       .status(503)
       .type('text/plain; charset=utf-8')
-      .send('Раздача файлов отключена: не задан FILES_SECRET или ADMIN_TOKEN');
+      .send('Раздача файлов отключена: не заданы секреты ссылок и файлов');
   }
 
   if (!r2.verifySignature(key, req.params.signature)) {
