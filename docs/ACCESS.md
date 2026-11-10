@@ -8,7 +8,7 @@
 |---|---|---|---|
 | GitHub fine-grained PAT, репозиторий `blik-byte/YouGile-GLM`, `Contents: Read and write` | передаётся владельцем в чат; в git-конфиг не записывается | push изменений в `main` → автодеплой Render | `git ls-remote https://<token>@github.com/blik-byte/YouGile-GLM.git` |
 | Render, сервис `yougile-glm` → `ADMIN_TOKEN` | переменные Render; локально не нужен | дашборд, `/api/*`, подпись ссылок на файлы | `GET /api/dashboard` с заголовком `X-Admin-Token` |
-| YouGile → `YOUGILE_GLM_API_KEY` (ключ **аккаунта агента**) | переменные Render | чтение/создание задач, досок, проектов | `GET /api-v2/projects` с `Authorization: Bearer <key>` |
+| YouGile → `YOUGILE_GLM_API_KEY` (ключ **аккаунта агента**) | переменные Render | чтение/создание задач, досок, проектов | `GET /api-v2/projects` с заголовком авторизации |
 | YouGile → `YOUGILE_GLM_USER_ID` | переменные Render | подпись комментариев агентом | `GET /find-glm-user` с `X-Admin-Token` |
 | Z.AI → `ZAI_API_KEY` | переменные Render | GLM-4.5 Flash: планы, выполнение, ответы | любой шаг агента в дашборде |
 | Telegram → `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_IDS` | переменные Render | бот, whitelist | `/help` боту; `TELEGRAM_ADMIN_IDS` делает режим строгим |
@@ -31,6 +31,7 @@
 - **MODX:** `MODX_PUBLISHER_URL`, `MODX_PUBLISHER_TOKEN`, `MODX_TEMPLATE_PROMO`, `MODX_PARENT_PROMO`, `MODX_TEMPLATE_ARTICLE`, `MODX_PARENT_ARTICLE`, `MODX_AUTO_PUBLISH`.
 - **Хранилище:** `CLOUD_PROVIDER` (`mongo` по умолчанию), `FILES_SECRET`, `R2_*`, `PCLOUD_*`.
 - **Поведение задач:** `TASK_BATCH_SIZE`, `TASK_RUNNING_TTL_MIN`, `TASK_MAX_ATTEMPTS`, `TASK_RETRY_COOLDOWN_MIN`.
+- **Петля приёмки:** `REVIEW_POLL_INTERVAL_MS` (по умолчанию 120000, меньше 15000 отключает опрос), `REVIEW_POLL_PROJECT` (проект, чьи чаты опрашиваются).
 - **Прочее:** `PUBLIC_BASE_URL`, `HTTP_TIMEOUT_MS`, `REPORT_TZ`, `REPORT_HOUR`, `LOG_LEVEL`, `TZ`.
 
 ## Правила

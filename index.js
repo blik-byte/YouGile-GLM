@@ -621,6 +621,10 @@ async function start() {
 
   await startEmailWorker();
   startTaskExecutorWorker();
+
+  // Резервный канал петли приёмки: вебхук YouGile не доходит до сервиса,
+  // поэтому решения «ок» / «не ок» забираем опросом чатов задач.
+  require('./lib/review-poller').startReviewPoller({ notify: (message) => sendNotification(message) });
   startReportScheduler();
 
   // Подписка на вебхуки — идемпотентная, дубли больше не создаются
