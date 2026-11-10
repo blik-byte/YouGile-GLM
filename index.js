@@ -374,12 +374,33 @@ async function handleChatMessage(event) {
       return;
     }
 
+    const messages = await yougile.getChatMessages(chatId);
+
+    // Решение по итерации: «ок» или «не ок» в чате незавершённой задачи.
+    const reviewLoop = require('./lib/review-loop');
+    const review = await reviewLoop.handleReviewMessage({
+      taskId: chatId,
+      taskTitle: task.title,
+      completed: Boolean(task.completed),
+      text,
+      messages,
+      deps: {
+        completeTask: (id) =>
+          yougile.request('PUT', `/tasks/${encodeURIComponent(id)}`, { body: { completed: true } }),
+        addComment: (id, message) => executorsAddComment(id, message),
+        notify: (message) => sendNotification(message),
+      },
+    });
+
+    if (review.handled) {
+      console.log(`✅ Решение по задаче ${chatId}: ${review.action}`);
+      return;
+    }
+
     if (!task.completed) {
       console.log(`⏭️ Задача ${chatId} ещё не выполнена — на вопросы не отвечаем`);
       return;
     }
-
-    const messages = await yougile.getChatMessages(chatId);
 
     const userMessages = messages.filter((msg) => {
       const isAi =
