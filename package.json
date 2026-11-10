@@ -11,8 +11,10 @@
     "start": "node index.js",
     "dev": "node --watch index.js",
     "check": "node scripts/check.js",
-    "pcloud:token": "node scripts/get-pcloud-token.js",
-    "test": "node scripts/test-fixes.js && node scripts/test-features.js && node scripts/test-prod-issues.js && node scripts/test-cloud.js",
+    "pcloud:auth": "node scripts/get-pcloud-token.js",
+    "steward:apply": "node scripts/steward-apply.js",
+    "test": "node scripts/test-fixes.js && node scripts/test-features.js && node scripts/test-prod-issues.js && node scripts/test-cloud.js && node scripts/test-steward.js",
+    "test:steward": "node scripts/test-steward.js",
     "test:prod": "node scripts/test-prod-issues.js",
     "test:cloud": "node scripts/test-cloud.js",
     "test:e2e": "node scripts/e2e-cloud.js"

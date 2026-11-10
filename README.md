@@ -161,8 +161,8 @@
 │   ├── test-cloud.js         # Тесты облака: провайдеры, ключи, подписи, загрузка
 │   ├── test-prod-issues.js   # Регрессии на дефекты из боевого лога Render
 │   ├── e2e-cloud.js          # Сквозная проверка: документ → облако → ссылка → дашборд
-│   └── get-pcloud-token.js   # npm run pcloud:token (не работает с апреля 2026)
-├── package.json              # Зависимости, engines.node, скрипты (start/check/test/pcloud:token)
+│   └── get-pcloud-token.js   # npm run pcloud:auth (не работает с апреля 2026)
+├── package.json              # Зависимости, engines.node, скрипты (start/check/test/steward/pcloud:auth)
 ├── .env.example              # Документированный шаблон переменных окружения
 ├── .gitattributes            # Единые окончания строк LF для всех платформ
 └── package-lock.json         # Фиксация версий зависимостей для воспроизводимых сборок
@@ -343,7 +343,7 @@ R2_JURISDICTION=eu
 `CLOUD_PROVIDER=pcloud`. Полученный токен работает с файловыми операциями
 (`uploadfile`, `getfilepublink`), то есть ровно с тем, что нужно агенту.
 
-Утилита `npm run pcloud:token` оставлена для истории, но с апреля 2026
+Утилита `npm run pcloud:auth` оставлена для истории, но с апреля 2026
 возвращает ошибку — парольная авторизация больше не принимается.
 
 Google Drive удалён из проекта: Service Account не имеет собственной квоты
