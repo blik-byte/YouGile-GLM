@@ -215,6 +215,35 @@ test('старый маркер в живой задаче вычищается 
   assert.strictEqual(taskByTitle('Первая задача').description.trim(), 'Что-то починить');
 });
 
+test('текст с угловыми скобками экранируется и повторный прогон ничего не меняет', async () => {
+  reset();
+  const plan = JSON.parse(JSON.stringify(basicPlan));
+  plan.boards[0].tasks[0].description = 'Ответ /approve <id> и стрелка ->';
+
+  await admin.applyPlan(plan, { writeDelayMs: 0 });
+  const task = taskByTitle('Первая задача');
+  assert.ok(task.description.includes('&lt;id&gt;'), 'скобки должны быть экранированы');
+
+  calls.length = 0;
+  const stats = await admin.applyPlan(plan, { writeDelayMs: 0 });
+  assert.strictEqual(stats.tasks.updated, 0, 'второй прогон не должен ничего обновлять');
+});
+
+test('вставки вида <id> не считаются расхождением: их всё равно вырежет API', async () => {
+  reset();
+  await admin.applyPlan(basicPlan, { writeDelayMs: 0 });
+
+  const task = taskByTitle('Первая задача');
+  task.description = 'Команда /approve .';
+  calls.length = 0;
+
+  const plan = JSON.parse(JSON.stringify(basicPlan));
+  plan.boards[0].tasks[0].description = 'Команда /approve <id>.';
+
+  const stats = await admin.applyPlan(plan, { writeDelayMs: 0 });
+  assert.strictEqual(stats.tasks.updated, 0, 'не должно быть повторной перезаписи');
+});
+
 test('исполнитель из плана подставляется по почте', async () => {
   reset();
   await admin.applyPlan(basicPlan, { writeDelayMs: 0 });
