@@ -685,6 +685,17 @@ function registerHandlers() {
     const taskText = match[1].trim();
     if (!taskText) return safeSendMessage(chatId, `Использование: <code>/task Проведи SEO-аудит example.ru</code>`);
 
+    // /task new Колонка | Заголовок — задача в конкретную колонку (через steward)
+    if (/^new\s+/i.test(taskText)) {
+      try {
+        const botSteward = require('./lib/bot-steward');
+        await safeSendMessage(chatId, await botSteward.taskCommand(taskText.replace(/^new\s+/i, '')));
+      } catch (error) {
+        await safeSendMessage(chatId, `❌ ${escapeTelegram(error.message)}`);
+      }
+      return;
+    }
+
     await safeSendMessage(chatId, '🤖 Создаю задачу...');
 
     try {
@@ -699,6 +710,28 @@ function registerHandlers() {
       await safeSendMessage(chatId, `❌ Ошибка создания задачи: ${escapeTelegram(error.message)}`);
     }
   });
+
+  // Управление YouGile из бота: проекты, доски, колонки, план steward
+  const stewardCommands = [
+    [/^\/project(?:@\w+)?(?:\s+([\s\S]*))?$/, 'projectCommand'],
+    [/^\/board(?:@\w+)?(?:\s+([\s\S]*))?$/, 'boardCommand'],
+    [/^\/column(?:@\w+)?(?:\s+([\s\S]*))?$/, 'columnCommand'],
+    [/^\/steward(?:@\w+)?(?:\s+([\s\S]*))?$/, 'stewardCommand'],
+  ];
+
+  for (const [pattern, method] of stewardCommands) {
+    bot.onText(pattern, async (msg, match) => {
+      const chatId = String(msg.chat.id);
+      if (!(await resolveAccess(chatId)).allowed) return handleUnauthorized(msg);
+
+      try {
+        const botSteward = require('./lib/bot-steward');
+        await safeSendMessage(chatId, await botSteward[method]((match[1] || '').trim()));
+      } catch (error) {
+        await safeSendMessage(chatId, `❌ ${escapeTelegram(error.message)}`);
+      }
+    });
+  }
 
   bot.onText(/\/status(?:@\w+)?/, async (msg) => {
     const chatId = String(msg.chat.id);
