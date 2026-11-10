@@ -87,6 +87,10 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Счётчик входящих вебхуков: позволяет отличить «до нас не доходят события»
+// от «доходят, но обработка падает». Виден в /health.
+const webhookStats = { received: 0, lastAt: null };
+
 // Health check для мониторинга — лёгкий, без обращения к внешним сервисам
 app.get('/health', (req, res) => {
   res.json({
@@ -95,6 +99,7 @@ app.get('/health', (req, res) => {
     uptimeSec: Math.round(process.uptime()),
     node: process.version,
     timestamp: new Date().toISOString(),
+    webhook: webhookStats,
   });
 });
 
@@ -447,6 +452,9 @@ async function executorsAddComment(taskId, text) {
 
 app.post('/webhook/yougile', async (req, res) => {
   const event = req.body || {};
+
+  webhookStats.received += 1;
+  webhookStats.lastAt = new Date().toISOString();
 
   // Отвечаем СРАЗУ — до всякой обработки
   res.json({ success: true });
