@@ -375,9 +375,12 @@ async function processMail() {
           continue;
         }
 
-        // Подборка проектов Kwork — не задача, а материал для дайджеста
+        // Подборка проектов Kwork — не задача, а материал для дайджеста.
+        // Пересланные копии (Fwd:) приходят с адреса владельца — тоже берём.
         const fromAddress = toStr(envelope?.envelope?.from?.[0]?.address);
-        if (/kwork\.(ru|com)$/i.test(fromAddress) && /новые проект/i.test(subject)) {
+        const kworkMail = /kwork\.(ru|com)$/i.test(fromAddress) && /новые проект/i.test(subject);
+        const forwardedKwork = /^(fwd|fw):/i.test(subject) && /проект/i.test(subject);
+        if (kworkMail || forwardedKwork) {
           kworkUids.push(uid);
           continue;
         }
