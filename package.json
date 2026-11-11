@@ -13,11 +13,12 @@
     "check": "node scripts/check.js",
     "pcloud:auth": "node scripts/get-pcloud-token.js",
     "steward:apply": "node scripts/steward-apply.js",
-    "test": "node scripts/test-fixes.js && node scripts/test-features.js && node scripts/test-prod-issues.js && node scripts/test-cloud.js && node scripts/test-steward.js && node scripts/test-review.js && node scripts/test-bot-steward.js && node scripts/test-review-poller.js",
+    "test": "node scripts/test-fixes.js && node scripts/test-features.js && node scripts/test-prod-issues.js && node scripts/test-cloud.js && node scripts/test-steward.js && node scripts/test-review.js && node scripts/test-bot-steward.js && node scripts/test-review-poller.js && node scripts/test-kwork-filter.js",
     "test:steward": "node scripts/test-steward.js",
     "test:review": "node scripts/test-review.js",
     "test:bot": "node scripts/test-bot-steward.js",
     "test:poller": "node scripts/test-review-poller.js",
+    "test:kwork": "node scripts/test-kwork-filter.js",
     "test:prod": "node scripts/test-prod-issues.js",
     "test:cloud": "node scripts/test-cloud.js",
     "test:e2e": "node scripts/e2e-cloud.js"
