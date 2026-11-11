@@ -32,6 +32,7 @@
 - **Хранилище:** `CLOUD_PROVIDER` (`mongo` по умолчанию), `FILES_SECRET`, `R2_*`, `PCLOUD_*`.
 - **Поведение задач:** `TASK_BATCH_SIZE`, `TASK_RUNNING_TTL_MIN`, `TASK_MAX_ATTEMPTS`, `TASK_RETRY_COOLDOWN_MIN`.
 - **Петля приёмки:** `REVIEW_POLL_INTERVAL_MS` (по умолчанию 120000, меньше 15000 отключает опрос), `REVIEW_POLL_PROJECT` (проект, чьи чаты опрашиваются).
+- **Kwork-дайджест:** `KWORK_DIGEST_INTERVAL_MS` (по умолчанию 3600000 — раз в час; меньше 60000 отключает отправку). Письма разбираются почтовым воркером по адресу `MAIL_USER`.
 - **Прочее:** `PUBLIC_BASE_URL`, `HTTP_TIMEOUT_MS`, `REPORT_TZ`, `REPORT_HOUR`, `LOG_LEVEL`, `TZ`.
 
 ## Правила

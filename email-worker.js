@@ -295,6 +295,44 @@ async function ensureFolder(client, folderName) {
   }
 }
 
+/**
+ * Письма Kwork с подборкой проектов: разбираем и складываем в очередь дайджеста.
+ * Такие письма не задачи — GLM их не видит и задач по ним не создаёт.
+ */
+async function processKworkDigest(mailClient, uids) {
+  if (!uids || uids.length === 0) return 0;
+
+  const { parseKworkEmail } = require('./lib/kwork-mail');
+  const digest = require('./lib/kwork-digest');
+
+  let added = 0;
+
+  for await (const message of mailClient.fetch(uids, { uid: true, source: true })) {
+    try {
+      const parsed = await simpleParser(message.source);
+      const result = parseKworkEmail({
+        from: parsed.from && parsed.from.text,
+        subject: parsed.subject,
+        html: parsed.html || '',
+      });
+
+      if (!result.isKwork || result.projects.length === 0) {
+        await mailClient.messageFlagsAdd(message.uid, ['\\Seen'], { uid: true }).catch(() => {});
+        continue;
+      }
+
+      const stats = await digest.saveProjects(result.projects);
+      added += stats.added;
+      console.log(`🧾 Kwork: проектов ${result.projects.length}, новых ${stats.added}, дублей ${stats.skipped}`);
+      await mailClient.messageFlagsAdd(message.uid, ['\\Seen'], { uid: true }).catch(() => {});
+    } catch (error) {
+      console.error(`❌ Kwork-письмо UID ${message.uid}: ${error.message}`);
+    }
+  }
+
+  return added;
+}
+
 async function processMail() {
   if (stopping) return 0;
 
@@ -325,6 +363,7 @@ async function processMail() {
 
       // Отбор писем, похожих на задачи
       const candidateUids = [];
+      const kworkUids = [];
       for (const uid of unseen) {
         const envelope = await mailClient.fetchOne(uid, { envelope: true, uid: true });
         const subject = toStr(envelope?.envelope?.subject);
@@ -336,8 +375,18 @@ async function processMail() {
           continue;
         }
 
+        // Подборка проектов Kwork — не задача, а материал для дайджеста
+        const fromAddress = toStr(envelope?.envelope?.from?.[0]?.address);
+        if (/kwork\.(ru|com)$/i.test(fromAddress) && /новые проект/i.test(subject)) {
+          kworkUids.push(uid);
+          continue;
+        }
+
         if (isTaskEmail(fakeParsed)) candidateUids.push(uid);
       }
+
+      const kworkAdded = await processKworkDigest(mailClient, kworkUids);
+      if (kworkAdded) console.log(`🧾 В очередь дайджеста добавлено проектов: ${kworkAdded}`);
 
       console.log(`📬 Писем-задач: ${candidateUids.length}`);
       if (candidateUids.length === 0) return 0;
