@@ -113,9 +113,18 @@ test('зарубежный сайт отклоняется', () => {
   assert.ok(result.reason.includes('зарубеж'));
 });
 
-test('письмо без проектов не ломает разбор', () => {
-  const result = mail.parseKworkEmail({ from: 'news@kwork.ru', subject: 'Новые проекты на бирже Kwork', html: '<p>пусто</p>' });
+test('пересланное письмо (Fwd:) с проекта­ми распознаётся', () => {
+  const result = mail.parseKworkEmail({
+    from: 'blik6@mail.ru',
+    subject: 'Fwd: Новые проекты на бирже Kwork',
+    html,
+  });
   assert.strictEqual(result.isKwork, true);
+  assert.strictEqual(result.projects.length, 3);
+});
+
+test('письмо без проектов не даёт проектов', () => {
+  const result = mail.parseKworkEmail({ from: 'news@kwork.ru', subject: 'Новые проекты на бирже Kwork', html: '<p>пусто</p>' });
   assert.deepStrictEqual(result.projects, []);
 });
 
