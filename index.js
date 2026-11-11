@@ -625,6 +625,10 @@ async function start() {
   // Резервный канал петли приёмки: вебхук YouGile не доходит до сервиса,
   // поэтому решения «ок» / «не ок» забираем опросом чатов задач.
   require('./lib/review-poller').startReviewPoller({ notify: (message) => sendNotification(message) });
+
+  // Дайджест проектов Kwork: письма разбираются почтовым воркером,
+  // отправка — раз в час (KWORK_DIGEST_INTERVAL_MS).
+  require('./lib/kwork-digest').startDigest({ notify: (message) => sendNotification(message) });
   startReportScheduler();
 
   // Подписка на вебхуки — идемпотентная, дубли больше не создаются
