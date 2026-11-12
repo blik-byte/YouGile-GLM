@@ -166,6 +166,71 @@ app.get('/api/steward/new', async (req, res) => {
   }
 });
 
+// Смена статуса задачи: закрыть/открыть и/или переместить в колонку.
+// Параметры: token, id, completed (1|0), column (название или id)
+app.get('/api/steward/task', async (req, res) => {
+  const expected = process.env.STEWARD_HTTP_TOKEN || process.env.ADMIN_TOKEN;
+  if (!expected) return res.status(503).json({ error: 'STEWARD_HTTP_TOKEN или ADMIN_TOKEN не задан' });
+  if (String(req.query.token || '') !== expected) return res.status(403).json({ error: 'Неверный токен' });
+
+  const id = String(req.query.id || '').trim();
+  if (!id) return res.status(400).json({ error: 'Нужен параметр id' });
+
+  try {
+    const admin = require('./lib/yougile-admin');
+    const actions = [];
+
+    if (req.query.completed !== undefined) {
+      const completed = ['1', 'true', 'yes'].includes(String(req.query.completed).toLowerCase());
+      await admin.setTaskCompleted(id, completed);
+      actions.push(completed ? 'закрыта' : 'открыта');
+    }
+
+    if (req.query.column) {
+      const column = await admin.findColumn(String(req.query.column));
+      await admin.moveTaskToColumn(id, column.id);
+      actions.push(`перемещена в «${column.title}»`);
+    }
+
+    if (actions.length === 0) {
+      return res.status(400).json({ error: 'Нужен параметр completed или column' });
+    }
+
+    res.json({ ok: true, id, actions });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Правка: kind=project|board|column|task, id, title, description
+app.get('/api/steward/edit', async (req, res) => {
+  const expected = process.env.STEWARD_HTTP_TOKEN || process.env.ADMIN_TOKEN;
+  if (!expected) return res.status(503).json({ error: 'STEWARD_HTTP_TOKEN или ADMIN_TOKEN не задан' });
+  if (String(req.query.token || '') !== expected) return res.status(403).json({ error: 'Неверный токен' });
+
+  const kind = String(req.query.kind || '').trim();
+  const id = String(req.query.id || '').trim();
+  if (!kind || !id) return res.status(400).json({ error: 'Нужны параметры kind и id' });
+
+  try {
+    const admin = require('./lib/yougile-admin');
+
+    if (kind === 'task') {
+      const result = await admin.updateTaskFields(id, {
+        title: req.query.title,
+        description: req.query.description,
+      });
+      return res.json({ ok: true, ...result });
+    }
+
+    if (!req.query.title) return res.status(400).json({ error: 'Для переименования нужен title' });
+    const result = await admin.renameEntity(kind, id, String(req.query.title));
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 // Состояние интеграции с MODX: доступен ли коннектор и в каком он режиме
 app.get('/api/modx/status', requireAdmin, async (req, res) => {
   try {

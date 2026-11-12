@@ -73,6 +73,14 @@ function fakeRequest(method, apiPath, options = {}) {
     return { ok: true, status: 200, data: { id } };
   }
 
+  if (method === 'PUT' && ['projects', 'boards', 'columns'].includes(base)) {
+    const collection = base === 'projects' ? store.projects : base === 'boards' ? store.boards : store.columns;
+    const record = collection.find((item) => item.id === id);
+    assert.ok(record, `PUT на несуществующий ${base}/${id}`);
+    Object.assign(record, body);
+    return { ok: true, status: 200, data: { id } };
+  }
+
   throw new Error(`Неожиданный запрос: ${method} ${apiPath}`);
 }
 
@@ -242,6 +250,46 @@ test('вставки вида <id> не считаются расхождени�
 
   const stats = await admin.applyPlan(plan, { writeDelayMs: 0 });
   assert.strictEqual(stats.tasks.updated, 0, 'не должно быть повторной перезаписи');
+});
+
+test('статусы и правка: закрыть, переместить, переименовать', async () => {
+  reset();
+  await admin.applyPlan(basicPlan, { writeDelayMs: 0 });
+
+  const task = taskByTitle('Первая задача');
+  const column = store.columns.find((item) => item.title === '1. Контент');
+
+  await admin.setTaskCompleted(task.id, true);
+  assert.strictEqual(task.completed, true);
+
+  await admin.moveTaskToColumn(task.id, column.id);
+  assert.strictEqual(task.columnId, column.id);
+
+  await admin.updateTaskFields(task.id, { title: 'Новое имя' });
+  assert.strictEqual(task.title, 'Новое имя');
+
+  const project = store.projects[0];
+  await admin.renameEntity('project', project.id, 'Проект 2');
+  assert.strictEqual(project.title, 'Проект 2');
+});
+
+test('колонка ищется по названию, неоднозначность — ошибка', async () => {
+  reset();
+  await admin.applyPlan(basicPlan, { writeDelayMs: 0 });
+
+  const column = await admin.findColumn('1. Контент');
+  assert.strictEqual(column.title, '1. Контент');
+
+  store.columns.push({ id: 'dup', title: '1. Контент', boardId: column.boardId, deleted: null });
+  await assert.rejects(() => admin.findColumn('1. Контент'), /несколько/);
+  await assert.rejects(() => admin.findColumn('9. Нет такой'), /не найдена/);
+});
+
+test('правка без полей отклоняется', async () => {
+  reset();
+  await admin.applyPlan(basicPlan, { writeDelayMs: 0 });
+  const task = taskByTitle('Первая задача');
+  await assert.rejects(() => admin.updateTaskFields(task.id, {}), /Нечего менять/);
 });
 
 test('исполнитель из плана подставляется по почте', async () => {
