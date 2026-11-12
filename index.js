@@ -117,6 +117,55 @@ app.post('/steward/apply', requireAdmin, async (req, res) => {
   }
 });
 
+// Создание структуры по HTTP — для агентов, у которых нет прав на команды.
+// Формат простой, чтобы модель не путалась в JSON:
+//   /api/steward/new — параметры: token, project, tasks (через вертикальную черту), dryRun
+// Поддерживается и полный вариант: параметр plan с JSON или base64.
+app.get('/api/steward/new', async (req, res) => {
+  const expected = process.env.STEWARD_HTTP_TOKEN || process.env.ADMIN_TOKEN;
+  const passed = String(req.query.token || '');
+
+  if (!expected) return res.status(503).json({ error: 'STEWARD_HTTP_TOKEN или ADMIN_TOKEN не задан' });
+  if (passed !== expected) return res.status(403).json({ error: 'Неверный токен' });
+
+  try {
+    const admin = require('./lib/yougile-admin');
+    const { expandCompact } = require('./lib/steward-compact');
+
+    let input;
+    const raw = String(req.query.plan || '');
+
+    if (raw) {
+      const json = req.query.b64 ? Buffer.from(raw, 'base64').toString('utf8') : raw;
+      if (json.length > 8000) return res.status(413).json({ error: 'План слишком большой' });
+      input = JSON.parse(json.replace(/^\uFEFF/, ''));
+    } else {
+      const project = String(req.query.project || '').trim();
+      if (!project) return res.status(400).json({ error: 'Нужен параметр project или plan' });
+
+      const tasks = String(req.query.tasks || '')
+        .split('|')
+        .map((title) => title.trim())
+        .filter(Boolean)
+        .map((title) => ({ title }));
+
+      const columns = String(req.query.columns || '')
+        .split('|')
+        .map((title) => title.trim())
+        .filter(Boolean);
+
+      input = { project: { title: project }, tasks };
+      if (columns.length) input.board = { columns };
+    }
+
+    const plan = expandCompact(input);
+    const stats = await admin.applyPlan(plan, { dryRun: req.query.dryRun === '1' });
+    res.json(stats);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 // Состояние интеграции с MODX: доступен ли коннектор и в каком он режиме
 app.get('/api/modx/status', requireAdmin, async (req, res) => {
   try {
