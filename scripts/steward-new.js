@@ -102,7 +102,7 @@ async function main() {
     process.exit(1);
   }
 
-  const input = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const input = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
   const plan = expandCompact(input);
 
   console.log(`📦 Проект: ${plan.project.title}`);
