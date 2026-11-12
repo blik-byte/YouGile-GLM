@@ -24,7 +24,7 @@
 
 declare(strict_types=1);
 
-header('Content-Type: application/json; charset=utf-8');
+header('Content-Type: text/html; charset=utf-8');
 
 $configFile = __DIR__ . '/config.php';
 if (!is_file($configFile)) {
@@ -45,8 +45,23 @@ const DEFAULT_COLUMNS = ['Входящие', 'В работе', 'На прове
 
 function respond(array $payload, int $code = 200): void
 {
-    http_response_code($code);
-    echo json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    // По умолчанию отдаём HTML: инструменты чтения страниц у агентов
+    // принимают только HTML, а на чистом JSON отвечают ошибкой.
+    $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $asJson = isset($_GET['format']) && $_GET['format'] === 'json';
+
+    if ($asJson) {
+        http_response_code($code);
+        header('Content-Type: application/json; charset=utf-8');
+        echo $json;
+        exit;
+    }
+
+    http_response_code(200);
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>steward</title>'
+        . '<style>body{font:14px/1.5 monospace;padding:16px}pre{white-space:pre-wrap}</style></head>'
+        . '<body><pre>' . htmlspecialchars($json, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</pre></body></html>';
     exit;
 }
 
