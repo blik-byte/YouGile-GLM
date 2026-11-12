@@ -80,6 +80,30 @@ test('пачка распределяется по трём корзинам', (
   assert.strictEqual(result.unknown.length, 1);
 });
 
+test('описание не делает заказ подходящим: решают заголовок и категория', () => {
+  const withNoise = filter.classifyOrder(
+    {
+      title: 'Оставить отзыв с Карт',
+      category: 'Тексты / Постинг',
+      description: 'Нужно написать отзыв про сайт и продвижение, добавить ссылки',
+    },
+    rules
+  );
+  assert.strictEqual(withNoise.verdict, 'unknown');
+
+  const realSeo = filter.classifyOrder(
+    { title: 'SEO-продвижение сайта', category: 'Сайты', description: 'подробности в лс' },
+    rules
+  );
+  assert.strictEqual(realSeo.verdict, 'accept');
+
+  const excluded = filter.classifyOrder(
+    { title: 'SEO-специалист', category: 'Сайты', description: 'продвижение только по России' },
+    rules
+  );
+  assert.strictEqual(excluded.verdict, 'reject', 'исключение из описания должно работать');
+});
+
 test('пустой заголовок не ломает проверку', () => {
   assert.strictEqual(filter.classify('', rules).verdict, 'unknown');
   assert.strictEqual(filter.classify(null, rules).verdict, 'unknown');

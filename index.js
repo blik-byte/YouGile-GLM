@@ -629,6 +629,9 @@ async function start() {
   // Дайджест проектов Kwork: письма разбираются почтовым воркером,
   // отправка — раз в час (KWORK_DIGEST_INTERVAL_MS).
   require('./lib/kwork-digest').startDigest({ notify: (message) => sendNotification(message) });
+
+  // Сбор заказов FL.ru по RSS: каждые 20 минут (LEADS_FETCH_INTERVAL_MS).
+  require('./lib/fl-monitor').startFlMonitor();
   startReportScheduler();
 
   // Подписка на вебхуки — идемпотентная, дубли больше не создаются
