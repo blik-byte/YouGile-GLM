@@ -1,0 +1,2110 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Заказы · YouGile AI Agent</title>
+<script>
+(function(){
+  var t = null;
+  try { t = localStorage.getItem('leads-theme'); } catch(e){}
+  if (!t) t = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  document.documentElement.dataset.theme = t;
+})();
+</script>
+<style>
+:root{
+  --bg:#f5f7fb; --card:#ffffff; --surface2:#eef1f7; --hover:#f4f6fb;
+  --text:#1b2436; --muted:#61708b; --border:#e2e7f0;
+  --accent:#3556d8; --accent-strong:#2a44b3; --accent-soft:#e9edfc;
+  --accept:#178a51; --accept-soft:#e2f4ea;
+  --unknown:#96690a; --unknown-soft:#fbf0d4;
+  --reject:#b34a4a; --reject-soft:#f9e8e8;
+  --hot:#d2430f; --hot-soft:#fdeae0;
+  --violet:#6d4fd0; --violet-soft:#efeafc;
+  --blue:#0e7490; --blue-soft:#e0f2f7;
+  --shadow:0 1px 3px rgba(23,34,60,.08);
+  --shadow-lg:0 12px 32px rgba(15,24,50,.16);
+}
+html[data-theme="dark"]{
+  --bg:#0f131c; --card:#181d29; --surface2:#232a3a; --hover:#1f2534;
+  --text:#e7ebf4; --muted:#94a1ba; --border:#2a3347;
+  --accent:#8ba3ff; --accent-strong:#a5b8ff; --accent-soft:rgba(110,140,255,.14);
+  --accept:#4cc98a; --accept-soft:rgba(76,201,138,.13);
+  --unknown:#e0b04e; --unknown-soft:rgba(224,176,78,.13);
+  --reject:#e07b7b; --reject-soft:rgba(224,123,123,.12);
+  --hot:#ff7a45; --hot-soft:rgba(255,122,69,.14);
+  --violet:#a68dfd; --violet-soft:rgba(166,141,253,.13);
+  --blue:#4cc4e0; --blue-soft:rgba(76,196,224,.12);
+  --shadow:0 1px 3px rgba(0,0,0,.35);
+  --shadow-lg:0 14px 36px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+a{color:var(--accent)}
+button{font:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.container{max-width:1240px;margin:0 auto;padding:0 20px}
+.hidden{display:none !important}
+
+/* ── Шапка ─────────────────────────────────────── */
+.topbar{background:var(--card);border-bottom:1px solid var(--border)}
+.topbar-inner{display:flex;align-items:center;gap:12px;padding:11px 0;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px}
+.brand svg{color:var(--accent)}
+h1{font-size:19px;margin:0;font-weight:700;letter-spacing:-.2px}
+.sub{color:var(--muted);font-size:12.5px;margin-top:1px}
+.spacer{flex:1}
+.demo-tag{font-size:11px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+  color:var(--muted);border:1px solid var(--border);border-radius:20px;padding:3px 10px;white-space:nowrap}
+.btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);
+  background:var(--card);color:var(--text);border-radius:9px;padding:7px 13px;
+  font-size:13px;font-weight:600;cursor:pointer;transition:background .15s,border-color .15s}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+html[data-theme="dark"] .btn.primary{color:#101522}
+.btn.primary:hover{background:var(--accent-strong);border-color:var(--accent-strong)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+.btn.ghost:hover{background:var(--surface2);color:var(--text)}
+.btn.sm{padding:5px 10px;font-size:12.5px}
+.btn.xs{padding:3px 8px;font-size:11.5px;border-radius:7px}
+.icon-btn{width:34px;height:34px;justify-content:center;padding:0}
+.nav{display:flex;gap:2px;margin-top:9px;overflow-x:auto;scrollbar-width:none}
+.nav::-webkit-scrollbar{display:none}
+.nav button{border:0;background:none;color:var(--muted);font-size:13.5px;font-weight:600;
+  padding:8px 14px 10px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.nav button:hover{color:var(--text)}
+.nav button.on{color:var(--accent);border-bottom-color:var(--accent)}
+@media (max-width:720px){
+  .nav{position:relative;-webkit-mask:linear-gradient(to right,#000 0,#000 calc(100% - 28px),transparent);mask:linear-gradient(to right,#000 0,#000 calc(100% - 28px),transparent)}
+}
+
+/* ── Счётчики ──────────────────────────────────── */
+.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;padding:16px 0 4px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:11px 14px;box-shadow:var(--shadow)}
+.stat b{display:block;font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+.stat span{display:block;color:var(--muted);font-size:11.5px;margin-top:1px}
+.stat.accent b{color:var(--accent)}
+
+/* ── Плашки ────────────────────────────────────── */
+.banner-error{display:flex;align-items:flex-start;gap:10px;margin:12px 0 0;
+  background:var(--reject-soft);color:var(--reject);border:1px solid var(--reject);
+  border-radius:10px;padding:10px 14px;font-size:13px}
+.banner-new{display:flex;align-items:center;gap:12px;margin:12px 0 0;
+  background:var(--accent-soft);border:1px solid var(--accent);border-radius:10px;
+  padding:9px 8px 9px 14px;font-size:13.5px;font-weight:600;color:var(--text)}
+.banner-new .btn{margin-left:auto}
+
+/* ── Фильтры ───────────────────────────────────── */
+.filterbar{position:sticky;top:0;z-index:40;background:var(--card);border-bottom:1px solid var(--border);margin-top:16px}
+.filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 0}
+.seg{display:inline-flex;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:3px;gap:2px}
+.seg button{border:0;background:transparent;padding:5px 11px;border-radius:6px;font-size:12.5px;
+  color:var(--muted);cursor:pointer;font-weight:500;white-space:nowrap}
+.seg button.on{background:var(--card);color:var(--text);font-weight:700;box-shadow:var(--shadow)}
+select,input[type="search"],input[type="text"],input[type="number"],input[type="date"],input[type="time"]{
+  border:1px solid var(--border);background:var(--card);color:var(--text);
+  border-radius:9px;padding:7px 10px;font:inherit;font-size:13px}
+input[type="search"]{flex:1;min-width:140px;max-width:250px}
+input[type="search"]::placeholder{color:var(--muted)}
+.filters-toggle{display:none}
+.pop-wrap{position:relative}
+
+/* ── Раскладка ─────────────────────────────────── */
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;padding:16px 0 8px;align-items:start}
+.side{position:sticky;top:78px;display:grid;gap:16px}
+
+/* ── Список ────────────────────────────────────── */
+.list-meta{color:var(--muted);font-size:12.5px;margin:2px 0 10px}
+.card{background:var(--card);border:1px solid var(--border);border-left-width:3px;border-radius:12px;
+  padding:13px 16px 11px;margin-bottom:10px;box-shadow:var(--shadow);transition:box-shadow .15s;position:relative}
+.card:hover{box-shadow:0 3px 12px rgba(23,34,60,.1)}
+.card.v-accept{border-left-color:var(--accept)}
+.card.v-unknown{border-left-color:var(--unknown)}
+.card.v-reject{border-left-color:var(--reject);opacity:.72}
+.card.waiting{box-shadow:inset 0 0 0 1px var(--unknown), var(--shadow)}
+.card.kselected{outline:2px solid var(--accent);outline-offset:1px}
+.card.fresh{animation:freshIn 1.6s ease-out}
+@keyframes freshIn{0%{background:var(--accent-soft)}100%{background:var(--card)}}
+@media (prefers-reduced-motion:reduce){.card.fresh{animation:none}}
+.card-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card-title{font-size:15px;font-weight:600;margin:7px 0 4px;line-height:1.35;cursor:pointer}
+.card-title:hover{color:var(--accent)}
+.card-meta{display:flex;flex-wrap:wrap;gap:5px 10px;align-items:center;font-size:12.5px;color:var(--muted)}
+.card-desc{color:var(--muted);margin:8px 0 6px;font-size:13px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card-reason{font-size:12.5px;margin:7px 0 2px;color:var(--muted);display:flex;gap:7px;align-items:baseline}
+.card-reason::before{content:"";width:7px;height:7px;border-radius:2px;flex:none;transform:translateY(-1px)}
+.card.v-unknown .card-reason::before{background:var(--unknown)}
+.card.v-reject .card-reason::before{background:var(--reject)}
+.dossier{font-size:12px;color:var(--muted);display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
+.badge{font-size:11px;font-weight:700;padding:2.5px 9px;border-radius:20px;white-space:nowrap}
+.badge.v-accept{color:var(--accept);background:var(--accept-soft)}
+.badge.v-unknown{color:var(--unknown);background:var(--unknown-soft)}
+.badge.v-reject{color:var(--reject);background:var(--reject-soft)}
+.badge.st{color:var(--muted);background:var(--surface2);font-weight:600}
+.badge.hot{color:var(--hot);background:var(--hot-soft)}
+.badge.dup{color:var(--violet);background:var(--violet-soft);cursor:pointer}
+.bk-chip{font-size:10px;font-weight:700;padding:1.5px 7px;border-radius:5px;letter-spacing:.3px;vertical-align:1px}
+.bk-fixed{color:var(--muted);background:var(--surface2)}
+.bk-monthly{color:var(--blue);background:var(--blue-soft)}
+.bk-from{color:var(--violet);background:var(--violet-soft)}
+.src{font-size:11px;font-weight:700;padding:2.5px 8px;border-radius:5px;letter-spacing:.2px}
+.src.fl{color:#3b6ea5;background:rgba(59,110,165,.12)}
+.src.kw{color:#0d8f7e;background:rgba(13,143,126,.12)}
+html[data-theme="dark"] .src.fl{color:#7db3e8}
+html[data-theme="dark"] .src.kw{color:#54c9b8}
+.score{margin-left:auto;font-size:12px;font-weight:700;padding:2px 9px;border-radius:7px;
+  font-variant-numeric:tabular-nums;cursor:pointer;border:1px solid transparent}
+.score:hover{border-color:currentColor}
+.score.hi{color:var(--accent);background:var(--accent-soft)}
+.score.mid{color:var(--unknown);background:var(--unknown-soft)}
+.score.low{color:var(--muted);background:var(--surface2)}
+.wait-tag{color:var(--unknown);font-weight:600;font-size:12px}
+.card-note{font-size:12.5px;color:var(--muted);border-left:2px solid var(--border);padding:2px 0 2px 10px;margin:8px 0 0}
+.card-note b{color:var(--text);font-weight:600}
+.card-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.card-actions .grow{flex:1}
+.menu-wrap{position:relative}
+.menu{position:absolute;right:0;top:calc(100% + 5px);min-width:190px;z-index:60;
+  background:var(--card);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-lg);padding:5px}
+.menu button{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;
+  border:0;background:none;text-align:left;padding:7px 10px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--text)}
+.menu button:hover{background:var(--surface2)}
+.menu .check{color:var(--accent);font-weight:700;width:14px;display:inline-block}
+.more-btn{display:block;margin:16px auto 6px}
+.empty{text-align:center;padding:52px 24px;border:1.5px dashed var(--border);border-radius:14px;color:var(--muted)}
+.empty p{margin:0 0 16px;font-size:14px}
+
+/* ── Поповер балла ─────────────────────────────── */
+.scorepop{position:fixed;z-index:120;background:var(--card);border:1px solid var(--border);
+  border-radius:12px;box-shadow:var(--shadow-lg);padding:14px 16px;width:320px}
+.scorepop h3{font-size:13.5px;margin:0 0 2px;display:flex;align-items:center;gap:8px}
+.scorepop .rv{font-size:10.5px;font-weight:700;color:var(--accent);background:var(--accent-soft);
+  border-radius:12px;padding:1px 8px;letter-spacing:.3px}
+.scorepop .sum{margin:10px 0 0;padding:9px 0 3px;border-top:1px solid var(--border);font-size:12.5px;color:var(--muted)}
+.scorepop .sum b{color:var(--text);font-size:14px}
+.factor{display:grid;grid-template-columns:118px 1fr 46px;gap:9px;align-items:center;font-size:12px;margin:7px 0}
+.factor .val{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.fbar{height:6px;border-radius:4px;background:var(--surface2);overflow:hidden}
+.fbar i{display:block;height:100%;border-radius:4px;background:var(--accent)}
+.factor.zero .fbar i{background:var(--border)}
+.factor.zero .val{opacity:.55}
+
+/* ── Сайдбар ───────────────────────────────────── */
+.panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:15px 16px;box-shadow:var(--shadow);min-width:0}
+.panel h2{font-size:14.5px;margin:0;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.panel .panel-sub{font-size:11.5px;color:var(--muted);font-weight:500}
+.tg-chip{margin-left:auto;font-size:10.5px;font-weight:700;color:var(--accent);background:var(--accent-soft);
+  border-radius:12px;padding:2px 8px;white-space:nowrap}
+.sum-block{padding:11px 0 9px;border-top:1px solid var(--border);margin-top:11px}
+.sum-block.first{border-top:0;margin-top:9px}
+.sum-block h3{font-size:11.5px;margin:0 0 5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;
+  display:flex;align-items:center;gap:8px}
+.sum-block p{margin:0;font-size:13px}
+.sum-top{list-style:none;margin:6px 0 0;padding:0}
+.sum-top li{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:3px 0;align-items:baseline}
+.sum-top .b{white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--muted)}
+.clickable{cursor:pointer}
+.clickable:hover{color:var(--accent)}
+.sum-today{background:var(--accent-soft);border-radius:9px;padding:10px 12px;margin-top:12px}
+html[data-theme="dark"] .sum-today p{color:var(--text)}
+.reply{display:flex;gap:9px;padding:7px 0;font-size:12.5px;cursor:pointer;align-items:baseline}
+.reply:hover .r-title{color:var(--accent)}
+.reply .r-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none;transform:translateY(-1px)}
+.reply .r-title{font-weight:600}
+.reply .r-text{color:var(--muted)}
+.reply .r-time{margin-left:auto;color:var(--muted);white-space:nowrap;font-size:11.5px}
+.movement{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:3px 0}
+.movement .d{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+.movement .up{color:var(--accept)}
+.movement .down{color:var(--reject)}
+.today-actions{display:flex;gap:8px;margin-top:9px;align-items:center}
+
+/* ── Новости ───────────────────────────────────── */
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 4px}
+.chip{font-size:11.5px;font-weight:600;padding:3px 11px;border-radius:16px;border:1px solid var(--border);
+  background:var(--card);color:var(--muted);cursor:pointer}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+html[data-theme="dark"] .chip.on{color:#101522}
+.news-list{list-style:none;margin:6px 0 0;padding:0}
+.news-list li{padding:10px 0;border-top:1px solid var(--border)}
+.news-list li:first-child{border-top:0}
+.news-list li.read{opacity:.55}
+.news-head{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:3px}
+.tag{font-size:10px;font-weight:700;padding:1.5px 8px;border-radius:10px;letter-spacing:.3px}
+.tag.proj{color:var(--hot);background:var(--hot-soft)}
+.tag.industry{color:var(--muted);background:var(--surface2)}
+.tag.agents{color:var(--violet);background:var(--violet-soft)}
+.srctype{font-size:10.5px;color:var(--muted);font-weight:600}
+.news-list p{margin:0 0 3px;font-size:13px;line-height:1.45;font-weight:600}
+.news-why{font-size:12px;color:var(--muted);margin:0 0 4px;line-height:1.45}
+.news-meta{font-size:11.5px;color:var(--muted);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.news-actions{display:flex;gap:5px;margin-left:auto}
+.news-actions .btn.xs.act{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.hypothesis{margin-top:7px;font-size:12px;color:var(--unknown);background:var(--unknown-soft);
+  border:1px dashed var(--unknown);border-radius:8px;padding:6px 10px}
+.dedup-note{font-size:11px;color:var(--muted)}
+
+/* ── Модалки ───────────────────────────────────── */
+.overlay{position:fixed;inset:0;background:rgba(8,13,28,.72);z-index:100;
+  display:flex;align-items:flex-start;justify-content:center;padding:4vh 16px;overflow:auto}
+.modal{background:var(--card);border-radius:14px;box-shadow:var(--shadow-lg);width:100%;max-width:780px;animation:pop .18s ease-out}
+.modal.narrow{max-width:560px}
+@keyframes pop{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.modal{animation:none}}
+.modal-head{display:flex;align-items:flex-start;gap:12px;padding:16px 20px 13px;border-bottom:1px solid var(--border)}
+.modal-head h3{font-size:16.5px;margin:2px 0 0;line-height:1.35}
+.modal-head .close{margin-left:auto}
+.modal-body{padding:16px 20px 20px;display:grid;gap:18px}
+.m-meta{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-size:12.5px;color:var(--muted)}
+.m-section h4{font-size:12px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
+.m-section p{margin:0;font-size:13.5px;white-space:pre-line}
+.m-url{display:inline-flex;gap:6px;font-size:13px;font-weight:600}
+textarea{width:100%;min-height:150px;resize:vertical;border:1px solid var(--border);
+  background:var(--bg);color:var(--text);border-radius:9px;padding:10px 12px;font:inherit;font-size:13.5px;line-height:1.55}
+textarea.note{min-height:60px}
+.btn-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:9px}
+.hint{font-size:12px;color:var(--muted)}
+.m-grid{display:grid;grid-template-columns:210px 1fr;gap:16px}
+.m-grid select,.m-grid input{width:100%}
+.m-client{font-size:13px;display:flex;flex-wrap:wrap;gap:6px 14px;color:var(--text)}
+.m-client .neg{color:var(--reject);font-weight:700}
+kbd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;background:var(--surface2);
+  border:1px solid var(--border);border-bottom-width:2px;border-radius:6px;padding:2px 7px;color:var(--text)}
+.keys-table{width:100%;border-collapse:collapse;font-size:13.5px}
+.keys-table td{padding:7px 4px;border-bottom:1px solid var(--border)}
+.keys-table td:first-child{width:130px}
+
+/* ── Правила ───────────────────────────────────── */
+.view{padding:18px 0 8px}
+.rules-wrap{max-width:900px;margin:0 auto;display:grid;gap:16px;min-width:0}
+.rule-item{display:flex;gap:10px;padding:8px 0;border-top:1px solid var(--border);font-size:13px;align-items:baseline}
+.rule-item:first-child{border-top:0}
+.rule-item .rid{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;font-weight:700;color:var(--accent);
+  background:var(--accent-soft);border-radius:6px;padding:1px 7px;white-space:nowrap}
+.rule-item .rn{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.rule-item .rr{color:var(--muted)}
+.wrow{display:grid;grid-template-columns:170px 64px 1fr 56px;gap:10px;align-items:center;padding:6px 0;font-size:13px}
+.wrow label{color:var(--text);font-weight:600;font-size:13px}
+.wrow input{width:64px;padding:5px 8px;text-align:right;font-variant-numeric:tabular-nums}
+.wrow .wmax{color:var(--muted);font-size:12px;text-align:right}
+.wsum{display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);flex-wrap:wrap}
+.wsum b{font-size:15px;font-variant-numeric:tabular-nums}
+.wsum .ok{color:var(--accept)}
+.wsum .bad{color:var(--reject)}
+.logic{font-size:12.5px;color:var(--muted);background:var(--surface2);border-radius:8px;padding:8px 12px;margin:10px 0 0}
+.meta-row{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;margin-top:8px;color:var(--muted)}
+.meta-row b{color:var(--text)}
+
+/* ── Источники ─────────────────────────────────── */
+.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:var(--card);box-shadow:var(--shadow)}
+table.src{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1060px}
+table.src th{position:sticky;top:0;background:var(--surface2);text-align:left;padding:9px 12px;font-size:11px;
+  text-transform:uppercase;letter-spacing:.4px;color:var(--muted);white-space:nowrap}
+table.src td{padding:9px 12px;border-top:1px solid var(--border);vertical-align:top}
+table.src tr.down td{background:var(--reject-soft)}
+.src-name b{display:block;font-size:13px}
+.src-name .u{color:var(--muted);font-size:11.5px;overflow-wrap:anywhere}
+.src-name .sid{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--muted);margin-left:6px}
+.v-badge{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:12px;white-space:nowrap}
+.v-active{color:var(--accept);background:var(--accept-soft)}
+.v-test{color:var(--accent);background:var(--accent-soft)}
+.v-check{color:var(--unknown);background:var(--unknown-soft)}
+.v-reject{color:var(--reject);background:var(--reject-soft)}
+.v-closed{color:var(--muted);background:var(--surface2)}
+.health{display:flex;align-items:center;gap:7px;white-space:nowrap}
+.health .btn{margin-left:8px}
+.hdot{width:8px;height:8px;border-radius:50%;flex:none}
+.hdot.ok{background:var(--accept)}
+.hdot.err{background:var(--reject)}
+.hdot.unk{background:var(--muted);opacity:.5}
+.src-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.add-form{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;padding:12px;border:1px dashed var(--border);border-radius:10px}
+.add-form input,.add-form select{min-width:130px}
+
+/* ── Интеграции ────────────────────────────────── */
+.int-wrap{max-width:720px;margin:0 auto;display:grid;gap:16px}
+.frow{display:grid;grid-template-columns:260px 1fr;gap:12px;align-items:center;padding:8px 0;font-size:13.5px}
+.frow label{font-weight:600}
+.frow .fh{font-size:12px;color:var(--muted);font-weight:400;margin-top:2px}
+.frow input{width:110px}
+.int-status{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:6px}
+.alert-box{background:var(--reject-soft);border:1px solid var(--reject);color:var(--reject);
+  border-radius:9px;padding:9px 13px;font-size:13px;margin-top:10px}
+
+/* ── Тосты, подвал ─────────────────────────────── */
+.toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,16px);z-index:300;
+  background:var(--text);color:var(--bg);padding:10px 18px;border-radius:10px;
+  font-size:13px;font-weight:600;opacity:0;transition:opacity .22s,transform .22s;pointer-events:none;
+  box-shadow:var(--shadow-lg);max-width:92vw;display:flex;gap:12px;align-items:center}
+.toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+.toast button{border:0;border-radius:7px;padding:5px 12px;font-weight:700;font-size:12.5px;
+  cursor:pointer;background:var(--accent);color:#fff;white-space:nowrap}
+html[data-theme="dark"] .toast button{color:#101522}
+.footer{border-top:1px solid var(--border);margin-top:28px;padding:14px 0 30px;color:var(--muted);font-size:12px}
+.footer-inner{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
+.demo-groups{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
+.demo-group{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.demo-group>span{font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:700}
+.demo-group .btn{padding:3px 9px;font-size:11.5px}
+
+/* ── v3: версии правил, дедуп, флаги ──────────── */
+.card-reason.strong{color:var(--reject);font-weight:600;font-size:13px;margin:6px 0 0}
+.score.m2{color:var(--muted);background:transparent;opacity:.7;border-color:transparent;cursor:default}
+.lbadge{display:inline-block;font-size:10px;font-weight:700;color:var(--unknown);background:var(--unknown-soft);
+  border-radius:10px;padding:1px 7px;letter-spacing:.3px;white-space:nowrap;vertical-align:1px}
+.upd-panel{border:1px solid var(--accent);background:var(--accent-soft);border-radius:12px;padding:15px 16px;box-shadow:var(--shadow)}
+.upd-panel.ok{border-color:var(--accept);background:var(--accept-soft)}
+.upd-list{margin:8px 0 0;padding-left:18px;font-size:13px;line-height:1.65}
+.fexpl{grid-column:1/-1;color:var(--muted);font-size:11px;line-height:1.4;margin:-3px 0 4px}
+.applied-rules{font-size:12px;margin:4px 0 10px;padding:7px 10px;background:var(--surface2);border-radius:8px;line-height:1.5}
+.applied-rules b{font-weight:700}
+table.src tr.src-group td{background:var(--surface2);font-weight:700}
+table.src tr.src-sub td:first-child{padding-left:28px}
+.hypothesis{cursor:pointer}
+.hypothesis:hover{border-style:solid}
+.dedup-note{cursor:pointer;text-decoration:underline dotted}
+.dup-list{margin:5px 0 0;padding-left:16px;font-size:11.5px;color:var(--muted);line-height:1.55}
+.dup-list li{padding:1px 0}
+.btn.restore-confirm{color:var(--reject);border-color:var(--reject)}
+.desc-none{font-style:italic}
+.chlog{margin:10px 0 0;font-size:12.5px}
+.chlog .ver{font-weight:700;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px}
+.chlog ul{margin:4px 0 10px;padding-left:18px;color:var(--muted);line-height:1.6}
+.sum-block h3 .h3hint{text-transform:none;font-weight:500;font-size:10.5px;letter-spacing:0}
+
+/* ── Адаптив ───────────────────────────────────── */
+@media (max-width:1080px){
+  .layout{grid-template-columns:1fr}
+  .side{position:static}
+  .stats{grid-template-columns:repeat(3,1fr)}
+}
+@media (max-width:720px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .filters{display:none;padding-bottom:14px}
+  .filters.open{display:flex}
+  .filters-toggle{display:inline-flex}
+  .seg{max-width:100%;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .seg::-webkit-scrollbar{display:none}
+  .seg button{padding:4px 7px;font-size:11px}
+  .filters{gap:10px}
+  .wrow{grid-template-columns:1fr 64px}
+  .wrow .fbar-wrap,.wrow .wmax{display:none}
+  .wrow label{grid-column:1;grid-row:1}
+  .wrow input{grid-column:2;grid-row:1}
+  input[type="search"]{max-width:none}
+  .modal-head{padding:13px 14px}
+  .modal-body{padding:14px}
+  .m-grid{grid-template-columns:1fr}
+  .factor{grid-template-columns:104px 1fr 46px;font-size:11.5px;line-height:1.3}
+  .wrow{grid-template-columns:1fr 64px;grid-template-rows:auto auto}
+  .wrow .fbar-wrap{display:none}
+  .card{padding:12px 13px 10px}
+  .card-actions .btn.primary{order:-1}
+  .frow{grid-template-columns:1fr}
+  .scorepop{width:min(320px,calc(100vw - 24px))}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="container">
+    <div class="topbar-inner">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7"/><path d="M3 13h18"/></svg>
+        <div>
+          <h1>Заказы</h1>
+          <div class="sub">FL.ru · обновлено <span id="lastFetch">5 мин назад</span></div>
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <span class="demo-tag" title="Все данные на странице — демонстрационные">прототип v3 · демо-данные</span>
+      <button class="btn primary" id="fetchNow">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.9-6.6"/><path d="M21 3v6h-6"/></svg>
+        Собрать сейчас
+      </button>
+      <button class="btn icon-btn ghost" id="themeToggle" title="Переключить тему" aria-label="Переключить тему">
+        <svg class="ico-moon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <svg class="ico-sun hidden" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M4.8 4.8l1.8 1.8M17.4 17.4l1.8 1.8M19.2 4.8l-1.8 1.8M6.6 17.4l-1.8 1.8"/></svg>
+      </button>
+    </div>
+    <nav class="nav" id="nav" aria-label="Разделы">
+      <button data-view="leads" class="on">Лента</button>
+      <button data-view="rules">Правила отбора</button>
+      <button data-view="sources">Источники</button>
+      <button data-view="integrations">Интеграции</button>
+    </nav>
+  </div>
+</header>
+
+<main class="container">
+
+  <!-- ═══════════ ЛЕНТА ═══════════ -->
+  <section id="view-leads">
+    <div class="stats" aria-label="Показатели">
+      <div class="stat accent"><b id="stNew">–</b><span>новых за сегодня</span></div>
+      <div class="stat"><b id="stAccept">–</b><span>подходящих в ленте</span></div>
+      <div class="stat"><b id="stApplied">–</b><span>откликов за неделю</span></div>
+      <div class="stat"><b id="stMedFixed">–</b><span>медиана · разовые</span></div>
+      <div class="stat"><b id="stMedMonthly">–</b><span>медиана · месячные</span></div>
+    </div>
+
+    <div class="banner-error hidden" id="errBanner">
+      <span aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.5"/></svg></span>
+      <div><b>Не удалось собрать FL.ru</b> — сеть ответила ошибкой (ETIMEDOUT). Показана лента с последнего успешного сбора (<span class="err-time">12:40</span>). Следующая попытка — по расписанию.</div>
+    </div>
+
+    <div class="banner-new hidden" id="newBanner">
+      <span id="newText">Появились новые заказы</span>
+      <button class="btn sm primary" id="showNew">Показать</button>
+    </div>
+
+    <div class="filterbar">
+      <div class="container">
+        <div class="filters" id="filters">
+          <div class="seg" id="segSource" role="group" aria-label="Площадка">
+            <button data-val="all" class="on">Все</button>
+            <button data-val="fl">FL.ru</button>
+          </div>
+          <div class="seg" id="segVerdict" role="group" aria-label="Вердикт">
+            <button data-val="main" class="on" title="Подходящие и спорные, без отклонённых">Основные</button>
+            <button data-val="accept">Подходящие</button>
+            <button data-val="unknown">Спорные</button>
+            <button data-val="reject">Отклонённые</button>
+            <button data-val="all">Все</button>
+          </div>
+          <select id="statusFilter" aria-label="Статус">
+            <option value="any">Статус: любой</option>
+            <option value="new">Новый</option>
+            <option value="viewed">Просмотрен</option>
+            <option value="applied">Откликнулся</option>
+            <option value="replied">Ответил</option>
+            <option value="declined">Не подходит</option>
+            <option value="archived">В архиве</option>
+          </select>
+          <select id="sortBy" aria-label="Сортировка">
+            <option value="score">Сортировка: приоритет</option>
+            <option value="budget">Сортировка: бюджет</option>
+            <option value="date">Сортировка: дата</option>
+          </select>
+          <input type="search" id="q" placeholder="Поиск по тексту заказа…" aria-label="Поиск по тексту">
+          <div class="pop-wrap">
+            <button class="btn sm" id="presetsBtn">Пресеты ▾</button>
+            <div class="menu hidden" id="presetPop" style="min-width:250px">
+              <div style="display:flex;gap:6px;padding:4px">
+                <input type="text" id="presetName" placeholder="Название пресета" style="flex:1;min-width:0">
+                <button class="btn sm primary" id="presetSave">Сохр.</button>
+              </div>
+              <div id="presetList"></div>
+            </div>
+          </div>
+          <button class="btn ghost sm" id="resetFilters">Сбросить</button>
+          <button class="btn ghost sm" id="kbdHint" title="Горячие клавиши">?</button>
+        </div>
+        <button class="btn filters-toggle" id="filtersToggle" aria-expanded="false">
+          <span id="filtersLabel">Фильтры</span> <span id="filtersCount" class="demo-tag" style="display:none"></span>
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="layout">
+      <section aria-label="Список заказов">
+        <div class="list-meta" id="listMeta"></div>
+        <div id="list"></div>
+        <button class="btn more-btn hidden" id="moreBtn">Показать ещё</button>
+      </section>
+
+      <aside class="side">
+        <section class="panel" id="sumPanel" aria-label="Сводка">
+          <h2>Сводка <span class="panel-sub" id="sumDate">утренний доклад · сегодня, 9:00</span><span class="tg-chip" title="Сводка дублируется утренним докладом в Telegram">↻ TG · 9:00</span></h2>
+          <div id="sumBody"></div>
+        </section>
+
+        <section class="panel" id="newsPanel" aria-label="Новости">
+          <h2>Новости <span class="panel-sub">AI и SEO · раз в час</span></h2>
+          <div class="chips" id="newsChips"></div>
+          <ul class="news-list" id="newsList"></ul>
+        </section>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ═══════════ ПРАВИЛА ═══════════ -->
+  <section id="view-rules" class="view hidden">
+    <div class="rules-wrap">
+      <section class="panel upd-panel" id="updPanel"></section>
+
+      <section class="panel">
+        <h2>Правила отбора <span class="panel-sub" id="rulesDate"></span><span class="tg-chip" id="rulesBadge" style="margin-left:auto">rules v1.0.0</span></h2>
+        <div class="meta-row">
+          <span>Шкала балла: <b>0–100</b></span>
+          <span>Порог «Подходит»: <b id="rulesThreshold">60</b></span>
+          <span>Обновлено: <b>2026-11-13</b></span>
+        </div>
+        <p class="logic" id="rulesLogic"></p>
+        <p class="hint" style="margin:8px 0 0">Балл = сумма компонентов ниже (каждый = вес × норма, округление до целого). Веса и порог можно править локально — правки помечаются бейджем «изменено локально» и применяются кнопкой «Пересчитать историю»: пересчитываются баллы и пороговые вердикты (FL-07). Жёсткие фильтры и остальные флаги не пересматриваются.</p>
+        <div class="chlog" id="rulesChangelog"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Веса и порог <span class="panel-sub">второй ярус · скоринг</span><span class="tg-chip" id="wsumBadge" style="margin-left:auto"></span></h2>
+        <div id="weightRows"></div>
+        <div class="wsum">
+          <span>Сумма весов: <b id="wsumVal">100</b> <span class="hint">(шкала 0–100, при применении нормализуется к 100)</span></span>
+          <span class="spacer" style="flex:1"></span>
+          <button class="btn sm" id="wReset">Сбросить к v1.0.0</button>
+          <button class="btn sm primary" id="wRecalc">Пересчитать историю</button>
+        </div>
+        <div id="recalcSummary"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Жёсткие фильтры <span class="panel-sub">первый ярус · отсев</span></h2>
+        <div id="hfList"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Флаги <span class="panel-sub">третий ярус · «спорно», ручной разбор</span></h2>
+        <div id="flList"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Схема данных <span class="panel-sub">справочник полей для агента-программиста</span></h2>
+        <div class="rule-item"><span class="rid">orders_raw</span><span class="rn">сырьё + снапшот</span><span class="rr">id, source, title, description, budget{value, kind}, url, client_ref, fetched_at, snapshot</span></div>
+        <div class="rule-item"><span class="rid">order_scores</span><span class="rn">оценка</span><span class="rr">order_id, score 0–100, verdict, reasons[], rules_version, components{service, budget, freshness, competition, client, engagement, clarity}</span></div>
+        <div class="rule-item"><span class="rid">clients</span><span class="rn">ФЛ-заказчик</span><span class="rr">бюджет, категория, число откликов, дата публикации</span></div>
+        <div class="rule-item"><span class="rid">hire_rate</span><span class="rn">демо-поле</span><span class="rr">определение не подтверждено — в прод-схеме отсутствует; подтвердить источник или удалить</span></div>
+        <div class="rule-item"><span class="rid">canonical_id</span><span class="rn">дедуп</span><span class="rr">один заказ на двух площадках = один канонический: взаимные ссылки, счётчики и медианы — один раз</span></div>
+        <div class="rule-item"><span class="rid">sources</span><span class="rn">площадки</span><span class="rr">колонки таблицы «Источники»: тип, сбор, частота, заметки, вердикт, приоритет, здоровье, последняя проверка</span></div>
+        <div class="rule-item"><span class="rid">events</span><span class="rn">события</span><span class="rr">new_orders → плашка «N новых» без автовставки; source_down → алерт с cooldown</span></div>
+        <div class="rule-item"><span class="rid">auto_status</span><span class="rn">переходы</span><span class="rr">open → viewed; copy_reply → suggest applied (с отменой)</span></div>
+      </section>
+    </div>
+  </section>
+
+  <!-- ═══════════ ИСТОЧНИКИ ═══════════ -->
+  <section id="view-sources" class="view hidden">
+    <div class="src-toolbar">
+      <b style="font-size:15px">Площадки по проектам и работе</b>
+      <span class="hint">админ-раздел · сбор, здоровье, вердикты</span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn sm primary" id="addSrcBtn">+ Добавить источник</button>
+    </div>
+    <div class="add-form hidden" id="srcForm">
+      <input type="text" id="nsName" placeholder="Название">
+      <input type="text" id="nsUrl" placeholder="URL / @handle">
+      <select id="nsType">
+        <option>заказы</option><option>вакансии</option><option>тендеры</option><option>реклама</option><option>общение</option>
+      </select>
+      <select id="nsCollect">
+        <option>parse</option><option>api</option><option>tg</option><option>manual</option>
+      </select>
+      <button class="btn sm primary" id="nsAdd">Добавить</button>
+      <button class="btn sm ghost" id="nsCancel">Отмена</button>
+    </div>
+    <div id="srcContent"></div>
+  </section>
+
+  <!-- ═══════════ ИНТЕГРАЦИИ ═══════════ -->
+  <section id="view-integrations" class="view hidden">
+    <div class="int-wrap">
+      <section class="panel">
+        <h2>Telegram <span class="panel-sub">уведомления и доклады</span></h2>
+        <div class="int-status" style="margin-top:10px">
+          <span class="hdot ok"></span> Подключён · чат владельца · уведомления демо
+        </div>
+        <div style="margin-top:8px">
+          <div class="frow">
+            <label>Горячий лид: балл ≥ <span class="fh">порог срабатывания бейджа «Горячий» и push-уведомления</span></label>
+            <input type="number" id="hotScore" min="0" max="100">
+          </div>
+          <div class="frow">
+            <label>Горячий лид: возраст ≤, ч <span class="fh">свежесть лида для «Горячего»</span></label>
+            <input type="number" id="hotAge" min="1" max="48">
+          </div>
+          <div class="frow">
+            <label>Утренний доклад <span class="fh">время отправки сводки в Telegram</span></label>
+            <span><input type="time" id="reportTime"> <span class="hint">Europe/Moscow</span></span>
+          </div>
+          <div class="frow">
+            <label>Follow-up через, дн. <span class="fh">подсветка откликов без ответа и напоминания</span></label>
+            <input type="number" id="followUpDays" min="1" max="14">
+          </div>
+          <div class="frow">
+            <label>Алерт «источник лежит» &gt;, ч <span class="fh">уведомление, если сбор не удаётся дольше</span></label>
+            <input type="number" id="sourceDownHours" min="1" max="72">
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn sm primary" id="tgSave">Сохранить</button>
+          <button class="btn sm" id="tgReset">Сбросить к дефолту</button>
+          <span class="hint">настройки применяются сразу к бейджу «Горячий» и подсветке follow-up</span>
+        </div>
+        <div id="tgAlerts"></div>
+      </section>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <span>Прототип v3 · демо-данные · правила отбора <span id="fRulesVer">v1.0.0</span> · в проде потребуется X-Admin-Token</span>
+      <span class="spacer" style="flex:1"></span>
+      <div class="demo-groups">
+        <div class="demo-group"><span>Лента</span>
+          <button class="btn ghost" data-panel="feed" data-state="empty">пусто</button>
+          <button class="btn ghost" data-panel="feed" data-state="error">ошибка</button>
+          <button class="btn ghost" data-panel="feed" data-state="normal">обычное</button>
+        </div>
+        <div class="demo-group"><span>Сводка</span>
+          <button class="btn ghost" data-panel="summary" data-state="empty">пусто</button>
+          <button class="btn ghost" data-panel="summary" data-state="error">ошибка</button>
+          <button class="btn ghost" data-panel="summary" data-state="normal">обычное</button>
+        </div>
+        <div class="demo-group"><span>Новости</span>
+          <button class="btn ghost" data-panel="news" data-state="empty">пусто</button>
+          <button class="btn ghost" data-panel="news" data-state="error">ошибка</button>
+          <button class="btn ghost" data-panel="news" data-state="normal">обычное</button>
+        </div>
+        <div class="demo-group"><span>Источники</span>
+          <button class="btn ghost" data-panel="sources" data-state="empty">пусто</button>
+          <button class="btn ghost" data-panel="sources" data-state="error">ошибка</button>
+          <button class="btn ghost" data-panel="sources" data-state="normal">обычное</button>
+        </div>
+        <div class="demo-group"><span>События</span>
+          <button class="btn ghost" id="demoNew">+2 новых заказа</button>
+        </div>
+      </div>
+    </div>
+  </footer>
+</main>
+
+<!-- Модалка заказа -->
+<div class="overlay hidden" id="overlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <div class="modal-head">
+      <div>
+        <div class="m-meta" id="mBadges" style="margin-bottom:4px"></div>
+        <h3 id="mTitle"></h3>
+      </div>
+      <button class="btn icon-btn ghost close" data-close aria-label="Закрыть">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="m-meta" id="mMeta"></div>
+      <section class="m-section"><h4>Описание</h4><p id="mDesc"></p></section>
+      <section class="m-section" id="mClientSec"><h4>Заказчик</h4><div class="m-client" id="mClient"></div></section>
+      <section class="m-section"><h4>Балл — из чего сложился</h4>
+        <p class="hint" style="margin:0 0 8px"><span id="mVerdict"></span></p>
+        <div id="mFactors"></div>
+        <p class="hint" id="mScoreSum" style="margin-top:8px"></p>
+      </section>
+      <section class="m-section"><h4>Черновик отклика</h4>
+        <textarea id="mDraft" spellcheck="false"></textarea>
+        <div class="btn-row">
+          <button class="btn primary sm" id="mCopy">Скопировать</button>
+          <button class="btn sm hidden" id="mRestore">Вернуть в разбор</button>
+          <button class="btn sm" id="mRebuild">Пересобрать</button>
+          <span class="hint">правки сохраняются автоматически</span>
+        </div>
+      </section>
+      <div class="m-grid">
+        <section class="m-section"><h4>Статус</h4>
+          <select id="mStatus"></select>
+          <p class="hint" id="mStatusHint" style="margin:8px 0 0"></p>
+        </section>
+        <section class="m-section"><h4>Заметка и следующее действие</h4>
+          <textarea class="note" id="mNotes" placeholder="Ваши заметки по заказу…"></textarea>
+          <div class="btn-row">
+            <input type="date" id="mNext" aria-label="Дата следующего действия">
+            <span class="hint">дата следующего действия</span>
+          </div>
+        </section>
+      </div>
+      <a class="m-url" id="mUrl" target="_blank" rel="noopener">Открыть оригинал
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg>
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Модалка горячих клавиш -->
+<div class="overlay hidden" id="helpOverlay">
+  <div class="modal narrow" role="dialog" aria-modal="true" aria-label="Горячие клавиши">
+    <div class="modal-head">
+      <h3>Горячие клавиши</h3>
+      <button class="btn icon-btn ghost close" data-close aria-label="Закрыть">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <table class="keys-table">
+        <tr><td><kbd>j</kbd> / <kbd>k</kbd></td><td>следующий / предыдущий заказ</td></tr>
+        <tr><td><kbd>o</kbd></td><td>открыть выбранный заказ</td></tr>
+        <tr><td><kbd>c</kbd></td><td>скопировать отклик выбранного</td></tr>
+        <tr><td><kbd>1</kbd>–<kbd>5</kbd></td><td>статус: новый · просмотрен · откликнулся · ответил · не подходит</td></tr>
+        <tr><td><kbd>?</kbd></td><td>эта подсказка</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>закрыть окно / поповер</td></tr>
+        <tr><td>поля ввода</td><td>в полях ввода и списках горячие клавиши отключены — печатайте свободно</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Поповер балла -->
+<div class="scorepop hidden" id="scorePop"></div>
+
+<div class="toast" id="toast" role="status"><span id="toastText"></span><button id="toastAct" class="hidden"></button></div>
+
+<script>
+'use strict';
+/* ══════════ Правила (машиночитаемый файл rules v1.0.0, сокращён) ══════════ */
+var RULES = {
+  version: '1.0.0',
+  updated: '2026-11-13',
+  threshold: 60,
+  logic: 'Жёсткие фильтры → «Отклонён»; флаги или балл < 60 → «Спорно» (с причиной); иначе «Подходит».',
+  weights: { service: 30, budget: 20, freshness: 15, competition: 10, client: 10, engagement: 10, clarity: 5 },
+  hard_filters: [
+    { id:'HF-01', name:'Оплата за результат', reason:'не подходит' },
+    { id:'HF-02', name:'% с заказов / продаж', reason:'не подходит' },
+    { id:'HF-03', name:'Гео вне РФ/KZ/BY', reason:'не подходит' },
+    { id:'HF-04', name:'Сайт не на русском', reason:'не подходит' },
+    { id:'HF-05', name:'Серые методы (накрутка ПФ, дорвеи, клоакинг)', reason:'отказ (пока)' },
+    { id:'HF-06', name:'SMM / контекст', reason:'отсев (пока)' }
+  ],
+  flags: [
+    { id:'FL-01', name:'Большое бесплатное тестовое', reason:'спорно, не отсев' },
+    { id:'FL-02', name:'Нереалистичные сроки', reason:'спорно, не отсев' },
+    { id:'FL-03', name:'Постоплата без аванса', reason:'спорно — уточнить' },
+    { id:'FL-04', name:'Гео вне подтверждённого списка', reason:'уточнить' },
+    { id:'FL-05', name:'Смежная услуга', reason:'ручной разбор' },
+    { id:'FL-06', name:'Прочее SEO вне whitelist', reason:'ручной разбор' },
+    { id:'FL-07', name:'Балл ниже порога', reason:'спорно' }
+  ]
+};
+var W_LABELS = { service:'Услуга', budget:'Бюджет', freshness:'Свежесть', competition:'Конкуренция',
+  client:'Заказчик', engagement:'Тип занятости', clarity:'Ясность' };
+var W_KEYS = ['service','budget','freshness','competition','client','engagement','clarity'];
+
+/* Обновление правил v1.1.0 (дельта из ТЗ №3) — применяется кнопкой «Пересчитать историю», сброс возвращает v1.0.0 */
+var UPDATE = {
+  version: '1.1.0',
+  applied: false,
+  changes: [
+    'HF-07 «Вне профиля»: разработка, вёрстка, дизайн, копирайтинг/тексты — отсев',
+    'FL-08 «Нет описания»: спорно, ручной разбор',
+    'hire_rate («найм N%») — демо-поле: источник и определение не подтверждены',
+    '«Пересчитать историю» обновляет вердикты по порогу/FL-07 + сводка изменений',
+    'Единая эффективная версия правил во всех местах интерфейса'
+  ],
+  hf: { id:'HF-07', name:'Вне профиля (разработка, вёрстка, дизайн, копирайтинг)', reason:'отсев — не SEO-услуга из whitelist' },
+  fl: { id:'FL-08', name:'Нет описания', reason:'спорно — объём работ не ясен, ручной разбор' }
+};
+var BASE_RULES = JSON.parse(JSON.stringify(RULES));
+var localEdits = false, lastRecalc = null;
+
+/* Настройки Telegram (блок G) */
+var TG = { hotScore: 80, hotAge: 2, reportTime: '09:00', followUpDays: 3, sourceDownHours: 6 };
+try {
+  var savedTG = localStorage.getItem('leads-tg');
+  if (savedTG) TG = JSON.parse(savedTG);
+} catch(e){}
+
+/* ══════════ Демо-данные ══════════ */
+var H = 36e5, D = 24 * H, NOW = Date.now();
+
+var DRAFTS = {
+  audit: function(fl){ return 'Здравствуйте!' + (fl ? '\n' + fl : '') + '\n\nЗанимаюсь SEO с 2008 года. Предлагаю полный аудит: техническая часть, контент, ссылочный профиль, поведенческие факторы — по данным собственного сервиса аналитики. На выходе документ с приоритизированным списком правок: что даст эффект быстро, что работает вдолгую.\n\nРаботаю по этапам, оплата по факту этапа. Срок аудита — 5–7 дней.'; },
+  links: function(fl){ return 'Здравствуйте!' + (fl ? '\n' + fl : '') + '\n\nСобираю ссылочный профиль вручную с 2008 года: статьи на профильных площадках, каталоги, крауд. Без автоматических проставок и схем, за которые поисковики наказывают фильтрами. Перед стартом оцениваю текущий профиль на токсичность своим сервисом аналитики.\n\nПо итогам месяца — отчёт: какие ссылки размещены, где и зачем.'; },
+  consult: function(fl){ return 'Здравствуйте!' + (fl ? '\n' + fl : '') + '\n\nКонсультирую по SEO с 2008 года: стратегия, семантика, структура сайта, региональное продвижение через поддомены. Формат: созвон на 60 минут + письменные рекомендации с планом на квартал. Вопросы можно прислать заранее — подготовлюсь по вашему сайту.'; },
+  seo: function(fl){ return 'Здравствуйте!' + (fl ? '\n' + fl : '') + '\n\nЗанимаюсь комплексным SEO с 2008 года: семантика, внутренняя оптимизация, ссылочное, регионы через поддомены. Динамику показываю в цифрах каждый месяц — работаю со своим сервисом аналитики. По этапам: диагностика, план, реализация.'; },
+  generic: function(fl){ return 'Здравствуйте!' + (fl ? '\n' + fl : '') + '\n\nГотов взяться за задачу. SEO и веб-аналитика с 2008 года: аудит, семантика, ссылочное продвижение, вывод из-под фильтров поисковиков. Напишите пару деталей — предложу план и сроки в течение дня.'; }
+};
+
+/* cl: FL — {r:рейтинг, since, pr, sd:safe-deal, bl:чс}; Kwork — {name, hire} */
+/* rule/oop/nodesc — какое правило определило вердикт (демо): id из HF-xx / FL-xx, 'demo' — LLM-флаг,
+   oop — «вне профиля» (получает HF-07 после применения v1.1.0), nodesc — нет описания (FL-08) */
+var LEAD_RULES = {
+  'fl-774170':{rule:'HF-05'}, 'fl-774148':{rule:'HF-06'}, 'fl-773960':{rule:'HF-06'},
+  'kw-5527':{rule:'HF-06'}, 'kw-5497':{rule:'HF-06'}, 'kw-5505':{rule:'HF-04'},
+  'fl-774165':{rule:'FL-01'}, 'fl-774160':{rule:'FL-02'},
+  'fl-774005':{rule:'FL-05'}, 'fl-773877':{rule:'FL-05'}, 'fl-773850':{rule:'FL-05'},
+  'kw-5518':{rule:'FL-06'},
+  'kw-5515':{rule:'demo', demoReason:'Покупатель почти не нанимает (5%) — риск (найм — демо-поле)'},
+  'fl-774040':{oop:'разработка'}, 'fl-774101':{oop:'вёрстка'}, 'fl-774155':{oop:'копирайтинг'}, 'kw-5509':{oop:'разработка'},
+  'kw-5530':{nodesc:true}
+};
+var RAW = [
+  {id:'fl-774211', src:'fl', t:'Провести SEO-аудит интернет-магазина автозапчастей', cat:'SEO', bt:'45 000 ₽', bv:45000, bk:'fixed', h:5, v:'accept', vr:'Совпадение: аудит (whitelist) · бюджет 45 000 ₽', sk:'whitelist', eng:'one_time', resp:3, cl:{r:4.9,since:2019,pr:34,sd:true}, st:'new', type:'audit', desc:'Интернет-магазин на OpenCart, около 12 000 страниц. После смены домена трафик упал почти вдвое. Нужен полный аудит: техничка, контент, ссылки. От вас — список правок с приоритетами.'},
+  {id:'fl-774190', src:'fl', t:'Вывести сайт из-под фильтра АГС', cat:'SEO', bt:'60 000 ₽', bv:60000, bk:'fixed', h:3, v:'accept', vr:'Совпадение: вывод из-под фильтров · крупный бюджет', sk:'whitelist', eng:'one_time', resp:12, cl:{r:4.6,since:2017,pr:57,sd:true}, st:'new', type:'seo', desc:'Сайт туристической тематики под АГС с весны, обращения в поддержку результата не дали. Ищу специалиста именно с опытом вывода из-под фильтров Яндекса. Оплата по этапам: диагностика, план, реализация.'},
+  {id:'fl-774175', src:'fl', t:'Продвижение русскоязычного сайта (Казахстан и Беларусь)', cat:'SEO', bt:'50 000 ₽', bv:50000, bk:'fixed', h:1.5, v:'accept', vr:'Гео KZ/BY для русскоязычного сайта — подходит', sk:'whitelist', eng:'recurring', resp:4, cl:{r:4.7,since:2021,pr:12,sd:true}, st:'new', type:'seo', desc:'Интернет-магазин на русском языке, продаём в Казахстан и Беларусь. Нужны отдельные планы продвижения по каждой стране, кириллическая семантика, работа с региональной выдачей Яндекса.'},
+  {id:'fl-774170', src:'fl', t:'Нужны дорвеи и накрутка поведенческих факторов', cat:'SEO · серое', bt:'80 000 ₽', bv:80000, bk:'fixed', h:2, v:'reject', vr:'Серые методы: дорвеи, накрутка ПФ — отсев (HF-05)', sk:'other_seo', eng:'one_time', st:'new', type:'generic', desc:'Требуется агрессивное продвижение: сеть дорвеев с перелинковкой и накрутка поведенческих факторов. Гарантию результата берём на себя, оплата щедрая.'},
+  {id:'fl-774165', src:'fl', t:'SEO-аудит с бесплатным тестовым заданием', cat:'SEO', bt:'40 000 ₽', bv:40000, bk:'fixed', h:4, v:'unknown', vr:'Большое бесплатное тестовое (FL-01) — спорно, не отсев', sk:'whitelist', eng:'one_time', resp:22, cl:{r:4.1,since:2022,pr:7,sd:false}, st:'new', type:'audit', desc:'Сначала бесплатный тест: аудит 200 страниц каталога с планом правок. По результатам — оплачиваемый полный аудит и внедрение. От исполнителя ждём именно развёрнутое тестовое.'},
+  {id:'fl-774160', src:'fl', t:'Вывести сайт из-под АГС за неделю', cat:'SEO', bt:'45 000 ₽', bv:45000, bk:'fixed', h:5, v:'unknown', vr:'Нереалистичный срок: вывод из АГС за неделю (FL-02)', sk:'whitelist', eng:'one_time', st:'new', type:'seo', desc:'Сайт под АГС, нужно вывести максимум за неделю — горит, через неделю стартует реклама. Кто не уверен в сроках — не пишите.'},
+  {id:'fl-774148', src:'fl', t:'Настроить кампании в Google Ads', cat:'Реклама', bt:'25 000 ₽', bv:25000, bk:'fixed', h:6, v:'reject', vr:'Контекст — отсев (HF-06)', sk:'adjacent', eng:'one_time', st:'new', type:'generic', desc:'Товарка, бюджет на рекламу 150 000 ₽/мес. Нужно перенастроить действующие кампании и снизить цену заявки. Аналитика GA4 уже настроена.'},
+  {id:'fl-774120', src:'fl', t:'Комплексное SEO для сайта юридических услуг (Москва)', cat:'SEO', bt:'90 000 ₽', bv:90000, bk:'fixed', h:8, v:'accept', vr:'Совпадение: продвижение · крупный бюджет', sk:'whitelist', eng:'recurring', resp:16, cl:{r:4.8,since:2016,pr:88,sd:true}, st:'viewed', type:'seo', desc:'Юридические услуги, Москва, конкуренция высокая. Нужен подрядчик на комплексное продвижение: семантика, внутренняя оптимизация, ссылки. Отчётность раз в месяц, оплата ежемесячно.'},
+  {id:'fl-774185', src:'fl', t:'SEO для сайта автосервиса', cat:'SEO', bt:'25 000 ₽', bv:25000, bk:'fixed', h:7, v:'accept', vr:'Совпадение: продвижение · высокая конкуренция среди откликов', sk:'whitelist', eng:'recurring', resp:27, cl:{r:4.2,since:2020,pr:18,sd:false}, st:'new', type:'seo', desc:'Автосервис в Екатеринбурге, сайт на WordPress. Нужны рост по городу и запись на диагностику. Смотрю на подрядчиков с кейсами в автотематике.'},
+  {id:'fl-774090', src:'fl', t:'Собрать ссылочную массу для блога о ремонте', cat:'SEO', bt:'35 000 ₽', bv:35000, bk:'fixed', h:12, v:'accept', vr:'Совпадение: ссылки · бюджет 35 000 ₽', sk:'whitelist', eng:'one_time', resp:8, cl:{r:4.8,since:2018,pr:41,sd:true}, st:'applied', appliedD:3, type:'links', notes:'Писал в личку, обещал вернуться с ответом к концу недели.', next:'2026-11-14', desc:'Блог о ремонте квартир, 3 года, ссылок мало. Нужен аккуратный прирост без риска фильтров. Прошлый подрядчик лепил ссылки в комментариях — не подходит.'},
+  {id:'fl-774077', src:'fl', t:'Нужна консультация по структуре нового сайта', cat:'SEO · консультации', bt:'15 000 ₽', bv:15000, bk:'fixed', h:14, v:'accept', vr:'Совпадение: консультация (whitelist)', sk:'whitelist', eng:'one_time', st:'new', type:'consult', desc:'Запускаем сервис доставки еды в трёх городах. Нужна консультация по структуре сайта, чтобы сразу делать правильно: поддомены, категории, фильтры.'},
+  {id:'fl-774059', src:'fl', t:'Аудит usability и SEO каталога мебели', cat:'SEO', bt:'28 000 ₽', bv:28000, bk:'fixed', h:16, v:'accept', vr:'Совпадение: аудит · средний бюджет', sk:'whitelist', eng:'one_time', resp:11, cl:{r:4.4,since:2019,pr:26,sd:true}, st:'replied', appliedD:1, type:'audit', desc:'Каталог мебели, конверсия в корзину ниже нормы. Нужен совместный аудит юзабилити и SEO: где теряем пользователей и трафик. По итогам — документ с правками.'},
+  {id:'fl-774040', src:'fl', t:'Перевести сайт на HTTPS с сохранением позиций', cat:'Разработка', bt:'8 000 ₽', bv:8000, bk:'fixed', h:18, v:'reject', vr:'Технические работы — вне профиля', sk:'adjacent', eng:'one_time', st:'new', type:'generic', desc:'Сайт на самописной CMS, нужен переезд на HTTPS: сертификат, редиректы, правка внутренних ссылок. Главное — не потерять позиции.'},
+  {id:'fl-774021', src:'fl', t:'SEO-специалист в команду (удалённо, ставка)', cat:'SEO · вакансия', bt:'70 000 ₽/мес', bv:70000, bk:'monthly', h:20, v:'accept', vr:'Штат подходит (employment) · ставка 70 000 ₽/мес', sk:'employment', eng:'employment', resp:19, cl:{r:4.5,since:2019,pr:23,sd:true}, st:'new', type:'seo', desc:'Ищем SEO-специалиста в штат, удалённо. Задачи: 2–3 проекта одновременно, отчётность, коммуникация с клиентами. Оформление по договору, белая зарплата.'},
+  {id:'fl-774005', src:'fl', t:'Оптимизировать скорость загрузки WordPress', cat:'Разработка · SEO', bt:'20 000 ₽', bv:20000, bk:'fixed', h:22, v:'unknown', vr:'Смежная услуга: скорость — ручной разбор (FL-05)', sk:'adjacent', eng:'one_time', st:'new', type:'generic', desc:'Показатели Core Web Vitals в красной зоне, мобильные позиции просели. Нужна оптимизация: кэш, картинки, скрипты. Сайт на WordPress + Elementor.'},
+  {id:'fl-773988', src:'fl', t:'Продвижение сайта стоматологии в регионах', cat:'SEO', bt:'55 000 ₽', bv:55000, bk:'fixed', h:26, v:'accept', vr:'Совпадение: продвижение · регионы · крупный бюджет', sk:'whitelist', eng:'recurring', resp:14, cl:{r:4.7,since:2018,pr:31,sd:true}, st:'new', type:'seo', desc:'Сеть клиник: Иваново, Владимир, Кострома. Нужен отдельный план под каждый город. Прошлый подрядчик делал один сайт на все регионы — не сработало.'},
+  {id:'fl-773960', src:'fl', t:'Наполнить и вести группу ВКонтакте', cat:'SMM', bt:'10 000 ₽', bv:10000, bk:'fixed', h:28, v:'reject', vr:'SMM — отсев (HF-06)', sk:'adjacent', eng:'recurring', st:'archived', type:'generic', desc:'Нужно 3–4 поста в неделю, сторис, ответы подписчикам. Тематика — доставка цветов.'},
+  {id:'fl-773930', src:'fl', t:'Технический аудит сайта на Bitrix', cat:'SEO', bt:'35 000 ₽', bv:35000, bk:'fixed', h:30, v:'accept', vr:'Совпадение: аудит · бюджет 35 000 ₽', sk:'whitelist', eng:'one_time', resp:6, cl:{r:4.9,since:2015,pr:64,sd:true}, st:'new', type:'audit', desc:'Корпоративный сайт на Битриксе, после обновления редакции поехали URL и часть страниц выпала из индекса. Нужен технический аудит и план восстановления.'},
+  {id:'fl-773900', src:'fl', t:'Продвижение блога о стройке и ремонте', cat:'SEO', bt:'18 000 ₽', bv:18000, bk:'fixed', h:34, v:'accept', vr:'Совпадение: продвижение · средний бюджет', sk:'whitelist', eng:'recurring', st:'new', type:'seo', desc:'Блогу два года, 120 статей, трафик стагнирует. Нужен подрядчик на полгода: семантика, переработка старых статей, ссылки. Оплата ежемесячная.'},
+  {id:'fl-773877', src:'fl', t:'Оптимизировать карточки товаров под поиск', cat:'SEO · контент', bt:'12 000 ₽', bv:12000, bk:'fixed', h:38, v:'unknown', vr:'Смежное: контент + SEO — ручной разбор (FL-05)', sk:'adjacent', eng:'one_time', st:'new', type:'generic', desc:'320 карточек, тексты есть, но не оптимизированы. Нужно доработать под поисковые запросы без переспама.'},
+  {id:'fl-773850', src:'fl', t:'Настроить микроразметку Schema.org', cat:'Разработка · SEO', bt:'9 000 ₽', bv:9000, bk:'fixed', h:40, v:'unknown', vr:'Смежное: разметка — ручной разбор (FL-05)', sk:'adjacent', eng:'one_time', st:'new', type:'generic', desc:'Нужна микроразметка товаров, отзывов и «хлебных крошек» на сайте магазина. Без вмешательства в дизайн.'},
+  {id:'fl-774101', src:'fl', t:'Сверстать лендинг на Tilda по готовому макету', cat:'Разработка', bt:'30 000 ₽', bv:30000, bk:'fixed', h:9, v:'reject', vr:'Разработка/вёрстка — вне профиля', sk:'adjacent', eng:'one_time', st:'declined', type:'generic', desc:'Есть макет в Figma, нужно собрать лендинг на Tilda, подключить формы и метрику. Срок — неделя.'},
+  {id:'fl-774155', src:'fl', t:'Копирайтер для карточек товаров (30 шт.)', cat:'Тексты', bt:'6 000 ₽', bv:6000, bk:'fixed', h:5, v:'reject', vr:'Вне профиля: копирайтинг', sk:'adjacent', eng:'one_time', st:'new', type:'generic', desc:'Нужны тексты для карточек товаров интернет-магазина косметики, 1500–2000 знаков на карточку. Примеры и ТЗ пришлю.'},
+  {id:'kw-5544', src:'kwork', t:'Вывести сайт из-под фильтра АГС', cat:'SEO и продвижение', bt:'60 000 ₽', bv:60000, bk:'fixed', h:1, v:'accept', vr:'Дубль заказа с FL.ru', sk:'whitelist', eng:'one_time', cl:{name:'Игорь',hire:60}, st:'new', type:'seo', dedup:'fl-774190'},
+  {id:'kw-5532', src:'kwork', t:'SEO-аудит сайта', cat:'SEO и продвижение', bt:'от 5 000 ₽', bv:5000, bk:'from', h:1, v:'accept', vr:'Совпадение: аудит · покупатель с историей найма', sk:'whitelist', eng:'one_time', cl:{name:'Анна',hire:45}, st:'new', type:'audit'},
+  {id:'kw-5530', src:'kwork', t:'Вывод сайта из-под фильтров', cat:'SEO и продвижение', bt:'30 000 ₽', bv:30000, bk:'fixed', h:2, v:'unknown', vr:'Нет описания — объём работ не ясен, ручной разбор', sk:'whitelist', eng:'one_time', cl:{name:'Олег',hire:12}, st:'new', type:'seo'},
+  {id:'kw-5527', src:'kwork', t:'Настроить Яндекс Директ', cat:'Реклама', bt:'15 000 ₽', bv:15000, bk:'fixed', h:3, v:'reject', vr:'Контекст — отсев (HF-06)', sk:'adjacent', eng:'one_time', cl:{name:'Ксения',hire:22}, st:'new', type:'generic'},
+  {id:'kw-5524', src:'kwork', t:'Продвижение интернет-магазина', cat:'SEO и продвижение', bt:'30 000 ₽', bv:30000, bk:'fixed', h:4, v:'accept', vr:'Совпадение: продвижение · бюджет 30 000 ₽', sk:'whitelist', eng:'recurring', cl:{name:'Мария',hire:38}, st:'applied', appliedD:4, type:'seo', next:'2026-11-14'},
+  {id:'kw-5521', src:'kwork', t:'Консультация по SEO', cat:'SEO и продвижение', bt:'3 000 ₽', bv:3000, bk:'fixed', h:5, v:'accept', vr:'Совпадение: консультация · надёжный покупатель', sk:'whitelist', eng:'one_time', cl:{name:'Дмитрий',hire:50}, st:'new', type:'consult'},
+  {id:'kw-5518', src:'kwork', t:'Сделать аудит конкурентов', cat:'Маркетинг', bt:'7 000 ₽', bv:7000, bk:'fixed', h:7, v:'unknown', vr:'Конкурентный анализ — не классический SEO-аудит, ручной разбор', sk:'other_seo', eng:'one_time', cl:{name:'Лена',hire:8}, st:'new', type:'generic'},
+  {id:'kw-5515', src:'kwork', t:'Ссылки для сайта', cat:'SEO и продвижение', bt:'10 000 ₽', bv:10000, bk:'fixed', h:9, v:'unknown', vr:'Покупатель почти не нанимает (5%) — риск', sk:'whitelist', eng:'one_time', cl:{name:'Ольга',hire:5}, st:'new', type:'links'},
+  {id:'kw-5512', src:'kwork', t:'Улучшить позиции сайта', cat:'SEO и продвижение', bt:'20 000 ₽', bv:20000, bk:'fixed', h:11, v:'accept', vr:'Совпадение: продвижение · бюджет 20 000 ₽', sk:'whitelist', eng:'recurring', cl:{name:'Сергей',hire:30}, st:'viewed', type:'seo'},
+  {id:'kw-5509', src:'kwork', t:'Разработка сайта на WordPress', cat:'Разработка', bt:'40 000 ₽', bv:40000, bk:'fixed', h:13, v:'reject', vr:'Разработка — вне профиля', sk:'adjacent', eng:'one_time', cl:{name:'Артём',hire:35}, st:'new', type:'generic'},
+  {id:'kw-5505', src:'kwork', t:'SEO для англоязычного сайта', cat:'SEO и продвижение', bt:'25 000 ₽', bv:25000, bk:'fixed', h:16, v:'reject', vr:'Язык сайта не русский (HF-04)', sk:'whitelist', eng:'recurring', cl:{name:'John',hire:60}, st:'new', type:'seo'},
+  {id:'kw-5501', src:'kwork', t:'Собрать семантическое ядро', cat:'SEO и продвижение', bt:'8 000 ₽', bv:8000, bk:'fixed', h:20, v:'accept', vr:'Совпадение: семантика · свежий заказ', sk:'whitelist', eng:'one_time', cl:{name:'Павел',hire:35}, st:'new', type:'seo'},
+  {id:'kw-5497', src:'kwork', t:'Ведение Telegram-канала', cat:'SMM', bt:'12 000 ₽', bv:12000, bk:'fixed', h:24, v:'reject', vr:'SMM — отсев (HF-06)', sk:'adjacent', eng:'recurring', cl:{name:'Вика',hire:18}, st:'new', type:'generic'}
+];
+
+/* Отложенные «новые» заказы — для плашки «N новых — показать» */
+var PENDING = [
+  {id:'fl-774205', src:'fl', t:'Технический аудит сайта стоматологии', cat:'SEO', bt:'30 000 ₽', bv:30000, bk:'fixed', h:0.3, v:'accept', vr:'Совпадение: аудит', sk:'whitelist', eng:'one_time', resp:1, cl:{r:5,since:2020,pr:9,sd:true}, st:'new', type:'audit', desc:'Сайт клиники на WordPress, после редизайна просел трафик. Нужен технический аудит и план восстановления позиций.'},
+  {id:'kw-5546', src:'kwork', t:'Продвижение сайта по продаже картриджей', cat:'SEO и продвижение', bt:'от 15 000 ₽', bv:15000, bk:'from', h:0.2, v:'accept', vr:'Совпадение: продвижение', sk:'whitelist', eng:'recurring', cl:{name:'Никита',hire:33}, st:'new', type:'seo'}
+];
+
+var LEADS = RAW.map(function(r){
+  var fl = r.src === 'fl';
+  return {
+    id: r.id, source: r.src, title: r.t, category: r.cat,
+    budget: r.bt, budgetValue: r.bv, budgetKind: r.bk || 'fixed',
+    url: r.src === 'fl' ? 'https://www.fl.ru/projects/' + r.id.split('-')[1] + '/' : 'https://kwork.ru/projects/' + r.id.split('-')[1],
+    publishedAt: NOW - r.h * H, verdict: r.v, verdictReason: r.vr,
+    serviceKind: r.sk, engagement: r.eng, responses: (r.resp === undefined ? null : r.resp),
+    client: r.cl || null, status: r.st, draftType: r.type,
+    notes: r.notes || '', next: r.next || '',
+    appliedAt: r.appliedD ? NOW - r.appliedD * D : null,
+    description: r.desc || '', hasSite: fl, hasTask: !((LEAD_RULES[r.id] || {}).nodesc), hasBudget: r.bv > 0,
+    dedupOf: r.dedup || null, snoozedUntil: null, draftOverride: null,
+    rule: (LEAD_RULES[r.id] || {}).rule || null,
+    oop: (LEAD_RULES[r.id] || {}).oop || null,
+    nodesc: !!(LEAD_RULES[r.id] || {}).nodesc,
+    demoReason: (LEAD_RULES[r.id] || {}).demoReason || null,
+    baseV: r.v, baseVr: r.vr
+  };
+});
+LEADS.forEach(function(l){ l.baseRule = l.rule; });
+/* Обратная карта дедупа: оригинал → дубль (для взаимной пилюли на оригинале) */
+var DUP_REV = {};
+LEADS.forEach(function(l){ if (l.dedupOf) DUP_REV[l.dedupOf] = l.id; });
+
+/* Новости */
+var NEWS = [
+  { id:1, topic:'yandex', tag:'proj', title:'Яндекс обновил справку по региональному продвижению',
+    why:'У florist-msk.ru продвижение строится на региональных поддоменах — требования могли измениться.',
+    source:'Блог Яндекса для вебмастеров', stype:'official', time:'2 ч назад', read:false, later:false,
+    hyp:'Обновление справки + просадка florist-msk.ru в те же даты → проверить соответствие новым требованиям', hypSite:'florist-msk.ru' },
+  { id:2, topic:'google', tag:'industry', title:'Search Status Dashboard отметил развёртывание core update',
+    why:'После core-апдейтов обычно следует волна переранжирования — стоит ожидать флуктуаций позиций.',
+    source:'Google Search Central', stype:'official', time:'5 ч назад', read:false, later:true },
+  { id:3, topic:'ai', tag:'agents', title:'GLM-4.6 подешевел на длинных контекстах',
+    why:'Агент на GLM сможет держать больше контекста задач за те же деньги.',
+    source:'Блог Z.ai', stype:'official', time:'8 ч назад', read:false, later:false },
+  { id:4, topic:'links', tag:'industry', title:'Разбор кейсов: накрутка ПФ снова в зоне риска',
+    why:'Площадки из блока «отклонённые» с накруткой — подтверждение тренда, отсев HF-05 оправдан.',
+    source:'Searchengines.guru', stype:'aggregator', time:'11 ч назад', read:false, later:false,
+    dups:[{ t:'Накрутка поведенческих: что говорят площадки', s:'Телеграм-канал «SEO без воды»' }] },
+  { id:5, topic:'google', tag:'industry', title:'Волатильность выдачи Google выше обычного',
+    why:'Мониторить позиции клиентских сайтов до стабилизации.',
+    source:'Search Engine Roundtable', stype:'aggregator', time:'вчера', read:true, later:false },
+  { id:6, topic:'ai', tag:'agents', title:'Anthropic открыл доступ к агентным инструментам',
+    why:'Полезно для развития конвейеров собственного агента.',
+    source:'Блог Anthropic', stype:'official', time:'вчера', read:false, later:false }
+];
+try {
+  var savedNews = JSON.parse(localStorage.getItem('leads-news-states') || '{}');
+  NEWS.forEach(function(n){
+    if (savedNews[n.id]) { if (savedNews[n.id].read) n.read = true; if (savedNews[n.id].later) n.later = true; }
+  });
+} catch(e){}
+function saveNewsStates(){
+  try {
+    var st = {};
+    NEWS.forEach(function(n){ if (n.read || n.later) st[n.id] = { read: n.read, later: n.later }; });
+    localStorage.setItem('leads-news-states', JSON.stringify(st));
+  } catch(e){}
+}
+var NEWS_TOPICS = [
+  { v:'all', label:'Все' }, { v:'yandex', label:'Яндекс' }, { v:'google', label:'Google' },
+  { v:'ai', label:'AI' }, { v:'links', label:'Ссылки' }
+];
+var TAG_LABELS = { proj:'влияет на мои проекты', industry:'индустрия', agents:'для агентов' };
+
+/* Источники (админ-таблица) */
+var SOURCES = [
+  { id:'fl', name:'FL.ru', url:'fl.ru', type:'заказы', method:'parse', freq:'~300/мес (оценка 2026-10)', fit:'Есть число откликов; снапшоты', verdict:'active', pr:1, health:'ok', last:'1 ч назад', comment:'Основной источник' },
+  { id:'kw', name:'Kwork', url:'kwork.ru', type:'заказы', method:'parse', freq:'~150/мес', fit:'Запросы покупателей в письмах', verdict:'active', pr:1, health:'ok', last:'25 мин назад', comment:'Разбор писем уже написан' },
+  { id:'ws', name:'Workspace.ru', url:'workspace.ru', type:'тендеры', method:'parse', freq:'~200/мес (оценка 2023, устарела)', fit:'SEO-тендеры 30–60k+', verdict:'test', pr:2, health:'unk', last:'не проверялся', comment:'Добавить первым; проверить стоимость участия' },
+  { id:'habr-f', name:'Хабр Фриланс', url:'freelance.habr.com', type:'заказы', method:'—', freq:'—', fit:'—', verdict:'closed', pr:null, health:'unk', last:'—', comment:'Закрыт 28.02.2025' },
+  { id:'habr-c', name:'Хабр Карьера', url:'career.habr.com', type:'вакансии', method:'parse', freq:'~20/мес', fit:'Штат подходит; фильтр remote+SEO+RU', verdict:'test', pr:3, health:'ok', last:'3 ч назад', comment:'' },
+  { id:'tg-dt', name:'@digitaltender', url:'t.me/digitaltender', type:'заказы+вакансии', method:'tg', freq:'~30/мес', fit:'Бесплатное размещение; модерации нет; мелкие бюджеты', verdict:'test', pr:4, health:'ok', last:'2 ч назад', comment:'Чат @digitaltalks' },
+  { id:'tg-seohr', name:'@seohr', url:'t.me/seohr', type:'вакансии', method:'tg', freq:'ежедневно', fit:'Много буржа/iGaming — жёсткие фильтры', verdict:'test', pr:4, health:'ok', last:'1 ч назад', comment:'Фильтр обязателен' },
+  { id:'tg-pack', name:'TG job-пакет · группа (9 каналов)', url:'подборка SEOnews', type:'вакансии', method:'tg', freq:'~50/мес', fit:'Фильтр SEO+remote+RU обязателен', verdict:'test', pr:5, health:'ok', last:'4 ч назад', comment:'Группа: здоровье сводное; каналы — строками ниже', group:true },
+  { id:'tg-p1', name:'MyResume · вакансии', url:'t.me/myresume', type:'вакансии', method:'tg', freq:'~15/мес', fit:'Много нерелевантного, фильтр нужен', verdict:'test', pr:5, health:'ok', last:'4 ч назад', comment:'', sub:true },
+  { id:'tg-p2', name:'Работа в Digital 100k', url:'t.me/digital100k', type:'вакансии', method:'tg', freq:'~10/мес', fit:'Вакансии 100k+, SEO редко', verdict:'test', pr:5, health:'ok', last:'4 ч назад', comment:'', sub:true },
+  { id:'tg-p3', name:'SEOnews · работа', url:'t.me/seonews_jobs', type:'вакансии', method:'tg', freq:'~8/мес', fit:'Профильные SEO-вакансии', verdict:'active', pr:2, health:'ok', last:'1 ч назад', comment:'Лучший канал пакета', sub:true },
+  { id:'tg-p4', name:'Вакансии в маркетинге', url:'t.me/mktg_jobs', type:'вакансии', method:'tg', freq:'~6/мес', fit:'Смежные услуги — FL-05, ручной разбор', verdict:'test', pr:4, health:'ok', last:'2 ч назад', comment:'', sub:true },
+  { id:'tg-p5', name:'Remote digital jobs', url:'t.me/remote_digital', type:'вакансии', method:'tg', freq:'~5/мес', fit:'Часто зарубежные компании — HF-03/HF-04', verdict:'test', pr:5, health:'ok', last:'2 ч назад', comment:'', sub:true },
+  { id:'tg-p6', name:'Контент-вакансии', url:'t.me/content_jobs', type:'вакансии', method:'tg', freq:'~4/мес', fit:'Копирайтинг — вне профиля (HF-07 в v1.1.0)', verdict:'check', pr:5, health:'unk', last:'не проверялся', comment:'Проверить перед подключением', sub:true },
+  { id:'tg-p7', name:'Вакансии: разработка и веб', url:'t.me/webdev_jobs', type:'вакансии', method:'tg', freq:'~7/мес', fit:'Разработка — вне профиля, отсев', verdict:'check', pr:5, health:'ok', last:'3 ч назад', comment:'', sub:true },
+  { id:'tg-p8', name:'Фриланс-проекты и подряд', url:'t.me/freelance_projects', type:'заказы', method:'tg', freq:'~9/мес', fit:'Мелкие бюджеты, SEO редко', verdict:'test', pr:5, health:'ok', last:'1 ч назад', comment:'', sub:true },
+  { id:'tg-p9', name:'Digital-хантинг', url:'t.me/digital_hunting', type:'вакансии', method:'tg', freq:'н/д', fit:'Рекрутеры; штат подходит (employment)', verdict:'check', pr:5, health:'unk', last:'не проверялся', comment:'', sub:true },
+  { id:'tg-nf', name:'«НАСТОЯЩИЙ ФРИЛАНС»', url:'handle не проверен', type:'заказы', method:'tg', freq:'н/д', fit:'Заявлены прямые заказы + модерация', verdict:'check', pr:5, health:'unk', last:'не проверялся', comment:'Проверить канал перед подключением' },
+  { id:'txt', name:'Текстодром', url:'t.me/textodrom', type:'заявки контент', method:'tg', freq:'эпизодически', fit:'Прямые заявки, SEO редко', verdict:'check', pr:5, health:'unk', last:'не проверялся', comment:'Низкая релевантность' },
+  { id:'youdo', name:'YouDo / profi.ru', url:'youdo.com', type:'разовые заказы', method:'parse', freq:'н/д', fit:'Под аудиты/консультации; не верифицировано', verdict:'check', pr:4, health:'err', last:'7 ч назад · алерт 12:40, повтор не раньше 18:40 (cooldown 6 ч)', comment:'Проверить доступность сбора' },
+  { id:'flru', name:'Freelance.ru / Weblancer / Kadrof', url:'freelance.ru', type:'заказы', method:'parse', freq:'н/д', fit:'Не проверялись', verdict:'check', pr:5, health:'unk', last:'не проверялся', comment:'' },
+  { id:'seo-chat', name:'SEO chat true Original 100%', url:'закрытый чат', type:'общение', method:'manual', freq:'—', fit:'Субподряд и нетворкинг', verdict:'check', pr:null, health:'unk', last:'—', comment:'Не парсить' },
+  { id:'tg-borse', name:'TG-каналы самих бирж', url:'—', type:'дубли', method:'tg', freq:'—', fit:'Ничего нового против парсинга бирж', verdict:'reject', pr:null, health:'unk', last:'—', comment:'' }
+];
+
+/* Ответы заказчиков (сводка) */
+var REPLIES = [
+  { lead:'kw-5532', who:'Анна · Kwork', text:'«Сколько будет стоить аудит 300 страниц?»', time:'2 ч назад' },
+  { lead:'fl-774090', who:'Игорь · FL.ru', text:'«Пришлите примеры размещений и цены»', time:'вчера' }
+];
+
+/* Движения клиентских сайтов за 7 дней (согласовано с гипотезой новостей: просадка у florist) */
+var SITES = [
+  { name:'florist-msk.ru', d:'−4 позиции (3→7)', up:false },
+  { name:'autosound.ru', d:'+11% кликов', up:true },
+  { name:'rocket-up.space', d:'+4 запроса в топ-10', up:true }
+];
+
+var VERDICT = {accept:{label:'Подходит', cls:'v-accept'}, unknown:{label:'Спорно', cls:'v-unknown'}, reject:{label:'Не подходит', cls:'v-reject'}};
+var STATUS = [
+  {v:'new', label:'Новый'}, {v:'viewed', label:'Просмотрен'}, {v:'applied', label:'Откликнулся'},
+  {v:'replied', label:'Ответил'}, {v:'declined', label:'Не подходит'}, {v:'archived', label:'В архиве'}
+];
+var STATUS_BY = {}; STATUS.forEach(function(s){ STATUS_BY[s.v] = s.label; });
+var BK_LABELS = { fixed:'разовый', monthly:'мес', from:'от' };
+var PAGE_SIZE = 20;
+
+/* ══════════ Состояние ══════════ */
+var state = { view:'leads', source:'all', verdict:'main', status:'any', q:'', sort:'score', shown:PAGE_SIZE, feedState:'normal' };
+state.sel = -1; state.newsTopic = 'all';
+var panelState = { feed:'normal', summary:'normal', news:'normal', sources:'normal' };
+var openLeadId = null, pendingQueue = [], freshAdded = false;
+
+/* ══════════ Утилиты ══════════ */
+function $(s){ return document.querySelector(s); }
+function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function money(v){ return Math.round(v).toLocaleString('ru-RU') + ' ₽'; }
+function median(arr){ if (!arr.length) return null; var a = arr.slice().sort(function(x,y){return x-y;}); var m = Math.floor(a.length/2); return a.length % 2 ? a[m] : (a[m-1]+a[m])/2; }
+function ago(ts){
+  var m = Math.floor((Date.now() - ts) / 6e4);
+  if (m < 1) return 'только что';
+  if (m < 60) return m + ' мин назад';
+  var h = Math.floor(m / 60);
+  if (h < 24) return h + ' ч назад';
+  var d = Math.floor(h / 24);
+  return d === 1 ? 'вчера' : d + ' дн назад';
+}
+function firstLine(desc){
+  if (!desc) return '';
+  var s = desc.split(/(?<=[.!?])\s/)[0].split('\n')[0];
+  return s.length > 140 ? s.slice(0, 137) + '…' : s;
+}
+function buildDraft(l){ return l.draftOverride !== null ? l.draftOverride : DRAFTS[l.draftType](firstLine(l.description)); }
+function scoreCls(s){ return s >= 70 ? 'hi' : s >= 40 ? 'mid' : 'low'; }
+function leadById(id){ return LEADS.find(function(x){ return x.id === id; }); }
+function isHot(l){
+  var ageH = (Date.now() - l.publishedAt) / H;
+  return scoreOf(l) >= TG.hotScore && ageH <= TG.hotAge;
+}
+function waitingDays(l){
+  if (l.status !== 'applied' || !l.appliedAt) return 0;
+  if (l.snoozedUntil && Date.now() < l.snoozedUntil) return 0;
+  var d = Math.floor((Date.now() - l.appliedAt) / D);
+  return d >= TG.followUpDays ? d : 0;
+}
+var toastTimer = null;
+function toast(msg, opts){
+  opts = opts || {};
+  $('#toastText').textContent = msg;
+  var act = $('#toastAct');
+  if (opts.action) { act.textContent = opts.action.label; act.classList.remove('hidden'); act.onclick = function(){ hideToast(); opts.action.onClick(); }; }
+  else act.classList.add('hidden');
+  $('#toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, opts.timeout || 2600);
+}
+function hideToast(){ $('#toast').classList.remove('show'); }
+function copyText(text, okMsg, lead){
+  function done(){
+    if (lead && lead.verdict === 'reject') { toast('Заказ отклонён — отклик недоступен. Сначала «Вернуть в разбор»'); return; }
+    /* авто-переход copy_reply → suggest applied, с отменой; повторно не применяется */
+    if (lead && (lead.status === 'new' || lead.status === 'viewed')) {
+      var prev = lead.status;
+      setStatus(lead, 'applied');
+      toast(okMsg + ' · статус: Откликнулся', { action:{ label:'Отменить', onClick:function(){ setStatus(lead, prev); toast('Статус возвращён: ' + STATUS_BY[prev]); } }, timeout: 7000 });
+    } else toast(okMsg);
+  }
+  function fallback(){
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); done(); } catch(e) { toast('Не удалось скопировать'); }
+    document.body.removeChild(ta);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+  else fallback();
+}
+function setStatus(l, v){
+  l.status = v;
+  if (v === 'applied' && !l.appliedAt) l.appliedAt = Date.now();
+  renderList(); renderStats();
+}
+
+/* ══════════ Скоринг: норма × вес ══════════ */
+var SERVICE_NORM = { whitelist:1, employment:1, subcontract:1, other_seo:0.5, adjacent:0.3 };
+var ENG_NORM = { recurring:1, employment:1, subcontract:0.9, one_time:0.6 };
+function compNorms(l){
+  var ageH = (Date.now() - l.publishedAt) / H;
+  var fr = ageH <= 2 ? 1 : ageH <= 6 ? 0.85 : ageH <= 24 ? 0.6 : ageH <= 48 ? 0.35 : 0.15;
+  var bn;
+  if (l.budgetKind === 'monthly') bn = l.budgetValue < 20000 ? 0.4 : l.budgetValue <= 50000 ? 0.7 : 1.0;
+  else {
+    bn = l.budgetValue < 5000 ? 0.2 : l.budgetValue <= 15000 ? 0.4 : l.budgetValue <= 40000 ? 0.7 : l.budgetValue <= 80000 ? 0.9 : 1.0;
+    if (l.budgetKind === 'from') bn *= 0.8;
+  }
+  var cl;
+  if (l.source === 'kwork') cl = (l.client && l.client.hire >= 30) ? 0.8 : 0.5;
+  else if (!l.client) cl = 0.5;
+  else if (l.client.bl) cl = 0.2;
+  else cl = (l.client.r >= 4.5 && l.client.sd) ? 1.0 : (l.client.r >= 4 ? 0.8 : 0.5);
+  var cp = l.responses == null ? 0.5 : l.responses <= 5 ? 1.0 : l.responses <= 15 ? 0.7 : l.responses <= 30 ? 0.4 : 0.15;
+  var cn = [l.hasSite, l.hasTask, l.hasBudget].filter(Boolean).length;
+  return {
+    service: SERVICE_NORM[l.serviceKind] || 0.3, budget: bn, freshness: fr,
+    competition: cp, client: cl, engagement: ENG_NORM[l.engagement] || 0.6,
+    clarity: [0.1, 0.3, 0.6, 1][cn]
+  };
+}
+function compsOf(l){
+  var n = compNorms(l), out = {};
+  W_KEYS.forEach(function(k){ out[k] = Math.round((RULES.weights[k] || 0) * n[k]); });
+  return out;
+}
+function scoreOf(l){
+  var c = compsOf(l), s = 0;
+  W_KEYS.forEach(function(k){ s += c[k]; });
+  return Math.min(s, 100);
+}
+/* ── Версия правил: единый источник для ленты, подвала, поповера, вкладки ── */
+function versionBadgeHTML(){
+  return 'v' + RULES.version + (localEdits ? ' <span class="lbadge" title="Веса/порог изменены локально и ещё не применены к истории">изменено локально</span>' : '');
+}
+function refreshVersionBadges(){
+  $('#fRulesVer').innerHTML = versionBadgeHTML();
+  var lm = $('#lmVer'); if (lm) lm.innerHTML = versionBadgeHTML();
+  $('#rulesBadge').innerHTML = 'rules ' + versionBadgeHTML();
+}
+/* ── Строка применённых флагов/жёстких фильтров для поповера (2.4) ── */
+function ruleById(id){
+  var f = RULES.hard_filters.filter(function(x){ return x.id === id; })[0];
+  if (f) return f;
+  return RULES.flags.filter(function(x){ return x.id === id; })[0] || null;
+}
+function appliedRulesLine(l){
+  if (l.verdict === 'reject') {
+    if (l.rule === 'HF-07') return '<b>Жёсткий фильтр: HF-07</b> · вне профиля (' + l.oop + ') — не SEO-услуга из whitelist';
+    if (l.rule) { var f = ruleById(l.rule); return '<b>Жёсткий фильтр: ' + l.rule + '</b> · ' + (f ? esc(f.name) : ''); }
+    if (l.oop) return '<b>Отсев «вне профиля» (' + l.oop + ')</b> — в v1.0.0 правила нет; появится HF-07 в v1.1.0';
+    return '';
+  }
+  if (l.verdict === 'unknown') {
+    if (l.rule === 'FL-07') return '<b>Флаг: FL-07</b> · балл ' + scoreOf(l) + ' ниже порога ' + RULES.threshold + ' — спорно';
+    if (l.rule === 'FL-08') return '<b>Флаг: FL-08</b> · нет описания — объём работ не ясен, ручной разбор';
+    if (l.rule === 'demo') return '<b>Флаг (LLM)</b> · ' + esc(l.demoReason || '');
+    if (l.rule === 'manual') return '<b>Ручной разбор</b> · возвращён владельцем из отклонённых';
+    if (l.rule) { var fl = ruleById(l.rule); return '<b>Флаг: ' + l.rule + '</b> · ' + (fl ? esc(fl.name) : ''); }
+    if (l.nodesc) return '<b>Спорно: нет описания</b> — в v1.0.0 правила нет; появится FL-08 в v1.1.0';
+    return '';
+  }
+  return '';
+}
+function restoreLead(l){
+  l.verdict = 'unknown'; l.rule = 'manual';
+  l.verdictReason = 'Возвращён владельцем в ручной разбор';
+  renderList(); renderStats(); renderSummary();
+  toast('Возвращён в разбор — вердикт: Спорно');
+}
+/* ── Пояснения норм по компонентам (2.4): входное значение → диапазон → норма ── */
+function fmtNorm(n){ return String(Math.round(n * 100) / 100).replace('.', ','); }
+function compWhy(l){
+  var n = compNorms(l), ageH = Math.round((Date.now() - l.publishedAt) / H);
+  var skL = { whitelist:'услуга из whitelist', employment:'занятость в штате', subcontract:'субподряд', other_seo:'прочее SEO', adjacent:'смежная услуга' };
+  var engL = { recurring:'постоянная', employment:'штат', subcontract:'субподряд', one_time:'разовая' };
+  var frBand = ageH <= 2 ? 'до 2 ч' : ageH <= 6 ? '2–6 ч' : ageH <= 24 ? '6–24 ч' : ageH <= 48 ? '1–2 сут' : 'старше 2 сут';
+  var bd;
+  if (l.budgetKind === 'monthly') bd = l.budgetValue < 20000 ? 'до 20 тыс./мес' : l.budgetValue <= 50000 ? '20–50 тыс./мес' : 'от 50 тыс./мес';
+  else bd = l.budgetValue < 5000 ? 'до 5 тыс.' : l.budgetValue <= 15000 ? '5–15 тыс.' : l.budgetValue <= 40000 ? '15–40 тыс.' : l.budgetValue <= 80000 ? '40–80 тыс.' : 'от 80 тыс.';
+  var clTxt;
+  if (l.source === 'kwork') clTxt = 'Kwork: найм ' + l.client.hire + '% (демо-поле) — ' + (l.client.hire >= 30 ? 'история найма есть' : 'почти не нанимает');
+  else if (!l.client) clTxt = 'нет данных о заказчике';
+  else clTxt = 'рейтинг ' + l.client.r + (l.client.sd ? ' + safe-deal' : ', без safe-deal') + (l.client.bl ? ', чёрный список' : '');
+  var cpTxt = l.responses == null ? 'число откликов неизвестно' : l.responses + ' откликов';
+  var cnParts = [];
+  if (l.hasSite) cnParts.push('сайт'); if (l.hasTask) cnParts.push('задача'); if (l.hasBudget) cnParts.push('бюджет');
+  function fin(k, txt){ return txt + ' → норма ' + fmtNorm(n[k]) + ' × вес ' + RULES.weights[k] + ' = ' + Math.round(n[k] * RULES.weights[k]); }
+  return {
+    service: fin('service', skL[l.serviceKind] || '—'),
+    budget: fin('budget', l.budget + ' · ' + (l.budgetKind === 'monthly' ? 'месячный' : l.budgetKind === 'from' ? '«от»' : 'разовый') + ' → ' + bd + (l.budgetKind === 'from' ? ' ×0,8 за «от»' : '')),
+    freshness: fin('freshness', ageH + ' ч назад → ' + frBand),
+    competition: fin('competition', cpTxt),
+    client: fin('client', clTxt),
+    engagement: fin('engagement', engL[l.engagement] || '—'),
+    clarity: fin('clarity', (cnParts.length ? cnParts.join(' + ') : 'данных нет') + ' — ' + cnParts.length + ' из 3')
+  };
+}
+function factorsHTML(l){
+  var c = compsOf(l), why = compWhy(l);
+  return W_KEYS.map(function(k){
+    var w = RULES.weights[k], v = c[k];
+    return '<div class="factor' + (v === 0 ? ' zero' : '') + '"><span>' + W_LABELS[k] + '</span>' +
+      '<span class="fbar"><i style="width:' + (w ? Math.round(v / w * 100) : 0) + '%"></i></span>' +
+      '<span class="val">' + v + '/' + w + '</span>' +
+      '<span class="fexpl">' + esc(why[k]) + '</span></div>';
+  }).join('');
+}
+
+/* ══════════ Список ══════════ */
+function filtered(){
+  var q = state.q.trim().toLowerCase();
+  return LEADS.filter(function(l){
+    if (state.source !== 'all' && l.source !== state.source) return false;
+    if (state.verdict === 'main' && l.verdict === 'reject') return false;
+    if (state.verdict !== 'main' && state.verdict !== 'all' && l.verdict !== state.verdict) return false;
+    if (state.status !== 'any' && l.status !== state.status) return false;
+    if (q && (l.title + ' ' + l.description + ' ' + l.category).toLowerCase().indexOf(q) === -1) return false;
+    return true;
+  }).sort(function(a, b){
+    if (state.sort === 'budget') return b.budgetValue - a.budgetValue || b.publishedAt - a.publishedAt;
+    if (state.sort === 'date') return b.publishedAt - a.publishedAt;
+    return scoreOf(b) - scoreOf(a) || b.publishedAt - a.publishedAt;
+  });
+}
+function renderStats(){
+  var t0 = new Date(); t0.setHours(0,0,0,0);
+  /* дедуп: счётчики и медианы считают канонический заказ один раз (2.3) */
+  var canon = LEADS.filter(function(l){ return !l.dedupOf; });
+  $('#stNew').textContent = canon.filter(function(l){ return l.publishedAt >= t0.getTime(); }).length;
+  $('#stAccept').textContent = canon.filter(function(l){ return l.verdict === 'accept'; }).length;
+  $('#stApplied').textContent = LEADS.filter(function(l){ return l.appliedAt && l.appliedAt >= NOW - 7 * D; }).length;
+  var fixed = canon.filter(function(l){ return l.verdict !== 'reject' && l.budgetKind !== 'monthly' && l.budgetValue > 0; }).map(function(l){ return l.budgetValue; });
+  var monthly = canon.filter(function(l){ return l.verdict !== 'reject' && l.budgetKind === 'monthly'; }).map(function(l){ return l.budgetValue; });
+  var mf = median(fixed), mm = median(monthly);
+  $('#stMedFixed').textContent = mf ? money(mf) : '—';
+  $('#stMedMonthly').textContent = mm ? money(mm) + '/мес' : '—';
+}
+function statusMenu(l){
+  return '<div class="menu-wrap"><button class="btn sm" data-action="menu" aria-haspopup="true">Статус ▾</button>' +
+    '<div class="menu hidden">' + STATUS.map(function(s){
+      return '<button data-action="set-status" data-status="' + s.v + '">' + s.label +
+        '<span class="check">' + (s.v === l.status ? '✓' : '') + '</span></button>';
+    }).join('') + '</div></div>';
+}
+function dossierHTML(l){
+  if (!l.client) return '';
+  if (l.source === 'kwork') return '<span class="dossier" title="Демо-поле: «найм N%» — источник и определение не подтверждены; в прод-схеме поля нет">' + esc(l.client.name) + ' · найм ' + l.client.hire + '%</span>';
+  var parts = ['★ ' + l.client.r, 'на FL с ' + l.client.since, l.client.pr + ' проектов'];
+  if (l.client.sd) parts.push('СБ');
+  var html = '<span class="dossier">' + parts.join(' · ') + '</span>';
+  if (l.client.bl) html += ' <span class="badge v-reject" title="Заказчик в чёрном списке">ЧС</span>';
+  return html;
+}
+function renderList(){
+  var box = $('#list'), meta = $('#listMeta'), more = $('#moreBtn');
+  $('#errBanner').classList.toggle('hidden', state.feedState !== 'error');
+  if (state.feedState === 'empty') {
+    box.innerHTML = '<div class="empty"><p>Пока нет заказов.<br>Сбор идёт каждые 20 минут.</p>' +
+      '<button class="btn primary" data-action="collect">Собрать сейчас</button></div>';
+    meta.textContent = ''; more.classList.add('hidden');
+    return;
+  }
+  var arr = filtered();
+  var shown = Math.min(state.shown, arr.length);
+  box.innerHTML = arr.slice(0, shown).map(function(l, i){
+    var w = waitingDays(l), hot = isHot(l), rej = l.verdict === 'reject';
+    var hotTtl = 'Горячий: балл ≥ ' + TG.hotScore + ' и возраст ≤ ' + TG.hotAge + ' ч — пороги из настроек Telegram';
+    return '<article class="card ' + VERDICT[l.verdict].cls + (w ? ' waiting' : '') + (i === state.sel ? ' kselected' : '') + (l.fresh ? ' fresh' : '') + '" data-id="' + l.id + '" data-idx="' + i + '">' +
+      '<div class="card-top">' +
+        '<span class="badge ' + VERDICT[l.verdict].cls + '">' + VERDICT[l.verdict].label + '</span>' +
+        (hot ? '<span class="badge hot" title="' + esc(hotTtl) + '">Горячий</span>' : '') +
+        (l.dedupOf ? '<span class="badge dup" data-action="open-dup" data-dup="' + l.dedupOf + '" title="Тот же заказ уже есть в ленте — открыть оригинал">дубль на FL</span>' : '') +
+        (DUP_REV[l.id] ? '<span class="badge dup" data-action="open-dup" data-dup="' + DUP_REV[l.id] + '" title="Этот же заказ опубликован на Kwork — открыть дубль">дубль на Kwork</span>' : '') +
+        (w ? '<span class="wait-tag">ждёт ответа ' + w + ' ' + (w === 1 ? 'день' : 'дн.') + '</span>' : '') +
+        '<button class="score ' + (rej ? 'm2' : scoreCls(scoreOf(l))) + '" data-action="score" title="' + (rej ? 'Балл вторичен — вердикт определён жёстким фильтром' : 'Как сложился балл') + '">' + scoreOf(l) + '</button>' +
+      '</div>' +
+      (rej ? '<div class="card-reason strong">' + esc(l.verdictReason) + '</div>' : '') +
+      '<h3 class="card-title" data-action="open">' + esc(l.title) + '</h3>' +
+      '<div class="card-meta">' +
+        '<span class="src ' + (l.source === 'fl' ? 'fl">FL.ru' : 'kw">Kwork') + '</span>' +
+        '<span>' + esc(l.budget) + ' <span class="bk-chip bk-' + l.budgetKind + '">' + BK_LABELS[l.budgetKind] + '</span></span>' +
+        '<span>' + esc(l.category) + '</span>' +
+        '<span>' + ago(l.publishedAt) + '</span>' +
+        (l.responses != null ? '<span>' + l.responses + ' откликов</span>' : '') +
+        '<span class="badge st">' + STATUS_BY[l.status] + '</span>' +
+      '</div>' +
+      (!rej && l.verdict !== 'accept' ? '<div class="card-reason">' + esc(l.verdictReason) + '</div>' : '') +
+      dossierHTML(l) +
+      (l.description ? '<p class="card-desc">' + esc(firstLine(l.description)) + '</p>' : (l.nodesc ? '<p class="card-desc desc-none">Описание не приложено — детали только в письме площадки</p>' : '')) +
+      ((l.notes || l.next) ? '<div class="card-note">' + (l.notes ? '<b>' + esc(l.notes) + '</b>' : '') +
+        (l.next ? (l.notes ? ' · ' : '') + 'след. действие: ' + esc(fmtDate(l.next)) : '') + '</div>' : '') +
+      '<div class="card-actions">' +
+        '<button class="btn sm" data-action="open">Открыть</button>' +
+        (rej ? '<button class="btn sm" data-action="restore" title="Отклонённые не требуют отклика — вернуть в спорные для ручного разбора">Вернуть в разбор</button>'
+             : '<button class="btn primary sm" data-action="copy">Скопировать отклик</button>') +
+        statusMenu(l) +
+        (w ? '<button class="btn sm" data-action="remind" title="Напоминание попадёт в утренний доклад">Напомнить</button>' +
+              '<button class="btn sm" data-action="snooze" title="Скрыть подсветку на день">Отложить</button>' : '') +
+        '<span class="grow"></span>' +
+      '</div>' +
+    '</article>';
+  }).join('');
+  meta.innerHTML = arr.length ? 'Найдено: ' + arr.length + ' · показано ' + shown + ' · правила <span id="lmVer">' + versionBadgeHTML() + '</span>' : 'Ничего не найдено — попробуйте изменить фильтры';
+  if (arr.length > shown) {
+    more.textContent = 'Показать ещё (' + (arr.length - shown) + ')';
+    more.classList.remove('hidden');
+  } else more.classList.add('hidden');
+}
+function fmtDate(iso){
+  var d = new Date(iso + 'T00:00:00');
+  return d.getDate() + ' ' + ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'][d.getMonth()];
+}
+
+/* ══════════ Поповер балла ══════════ */
+var popAnchor = null;
+function positionScorePop(el){
+  var pop = $('#scorePop');
+  var r = el.getBoundingClientRect();
+  var left = Math.min(r.left, window.innerWidth - 336);
+  var top = r.bottom + 8;
+  if (top + pop.offsetHeight > window.innerHeight - 12) top = Math.max(12, r.top - pop.offsetHeight - 8);
+  pop.style.left = Math.max(12, left) + 'px';
+  pop.style.top = top + 'px';
+}
+function openScorePop(el, l){
+  var pop = $('#scorePop');
+  var arl = appliedRulesLine(l);
+  pop.innerHTML = '<h3>Как сложился балл <span class="rv">rules ' + versionBadgeHTML() + '</span></h3>' +
+    (arl ? '<div class="applied-rules">' + arl + '</div>' : '') +
+    factorsHTML(l) +
+    '<p class="sum">Сумма компонентов: <b>' + scoreOf(l) + '</b> из 100 · порог «Подходит» — ' + RULES.threshold +
+    ' · <a href="#" id="spRules" style="font-weight:600">править веса</a></p>';
+  pop.classList.remove('hidden');
+  popAnchor = el;
+  positionScorePop(el);
+  $('#spRules').addEventListener('click', function(e){ e.preventDefault(); closeScorePop(); switchView('rules'); });
+}
+function closeScorePop(){ $('#scorePop').classList.add('hidden'); popAnchor = null; }
+
+/* ══════════ Сводка ══════════ */
+var todayQueue = [], todayIdx = 0;
+/* «Отложить» в «Что сделать сегодня»: хранится в localStorage и не показывается до срока (3.4) */
+function getSnoozedToday(){
+  try { return JSON.parse(localStorage.getItem('leads-today-snooze') || '[]').filter(function(x){ return x.until > Date.now(); }); }
+  catch(e){ return []; }
+}
+function setSnoozedToday(a){ try { localStorage.setItem('leads-today-snooze', JSON.stringify(a)); } catch(e){} }
+function buildToday(){
+  var cands = [];
+  var w = LEADS.filter(function(l){ return waitingDays(l) > 0; })[0];
+  if (w) cands.push({ text:'Напомнить о себе: «' + w.title + '» — отклик ' + waitingDays(w) + ' дн. назад', lead:w.id });
+  var r = REPLIES[0], rl = leadById(r.lead);
+  if (rl) cands.push({ text:'Ответить ' + r.who.split(' · ')[0] + ': «' + rl.title + '» — вопрос с ' + r.time, lead:r.lead });
+  var hot = LEADS.filter(isHot)[0];
+  if (hot) cands.push({ text:'Горячий заказ не просмотрен: «' + hot.title + '»', lead:hot.id });
+  var sn = getSnoozedToday(); setSnoozedToday(sn);
+  todayQueue = cands.filter(function(c){ return !sn.some(function(x){ return x.text === c.text; }); });
+  if (!todayQueue.length) todayQueue.push({ text:'Новых действий нет — можно заняться семантикой для rocket-up.space', lead:null });
+  todayIdx = 0;
+}
+function renderSummary(){
+  var box = $('#sumBody');
+  if (panelState.summary === 'empty') { box.innerHTML = '<div class="empty" style="padding:26px"><p style="margin:0">Данных пока нет.<br>Сводка собирается к 9:00.</p></div>'; return; }
+  if (panelState.summary === 'error') { box.innerHTML = '<div class="banner-error" style="margin:0"><b>Сводка недоступна</b> — ошибка сбора (500). Показаны данные последнего доклада.</div>'; return; }
+  var t0 = new Date(); t0.setHours(0,0,0,0);
+  var canon = LEADS.filter(function(l){ return !l.dedupOf; }); /* дедуп: считаем канонический один раз */
+  var day = canon.filter(function(l){ return l.publishedAt >= t0.getTime(); });
+  var dayAcc = day.filter(function(l){ return l.verdict === 'accept'; });
+  var top = day.sort(function(a,b){ return scoreOf(b) - scoreOf(a); }).slice(0, 3);
+  var waiting = LEADS.filter(function(l){ return waitingDays(l) > 0; }).length;
+  var t = todayQueue[todayIdx] || { text:'—', lead:null };
+  box.innerHTML =
+    '<div class="sum-block first"><h3>Ответы заказчиков <span class="h3hint">первая секция и в утреннем докладе Telegram</span></h3>' +
+      REPLIES.map(function(r){
+        return '<div class="reply" data-open="' + r.lead + '"><span class="r-dot"></span>' +
+          '<span><span class="r-title">' + esc(r.who) + '</span> <span class="r-text">' + esc(r.text) + '</span></span>' +
+          '<span class="r-time">' + r.time + '</span></div>';
+      }).join('') +
+    '</div>' +
+    '<div class="sum-block"><h3>Заказы за сутки</h3>' +
+      '<p>' + day.length + ' новых за сутки, из них подходящих — ' + dayAcc.length + '.' + (top.length ? ' Лучшие:' : '') + '</p>' +
+      '<ul class="sum-top">' + top.map(function(l){
+        return '<li><span class="clickable" data-open="' + l.id + '">' + esc(l.title) + '</span><span class="b">' + esc(l.budget) + '</span></li>';
+      }).join('') + '</ul>' +
+    '</div>' +
+    '<div class="sum-block"><h3>Зависшие</h3>' +
+      '<p class="clickable" id="sumHung">Отклики без ответа: ' + waiting + '</p>' +
+      '<p class="hint" style="margin-top:3px">клик — открыть фильтр ленты «Откликнулся»</p>' +
+    '</div>' +
+    '<div class="sum-block"><h3>Сайты · 7 дней</h3>' +
+      SITES.map(function(s){
+        return '<div class="movement clickable" data-site="' + esc(s.name) + '" title="Открыть проект этого сайта в RankTracker"><span>' + esc(s.name) + '</span><span class="d ' + (s.up ? 'up' : 'down') + '">' + s.d + '</span></div>';
+      }).join('') +
+      '<p class="hint" style="margin-top:6px">клик по строке — проект сайта в RankTracker</p>' +
+    '</div>' +
+    '<div class="sum-block sum-today"><h3>Что сделать сегодня</h3>' +
+      '<p' + (t.lead ? ' class="clickable" data-open="' + t.lead + '"' : '') + '>' + esc(t.text) + '</p>' +
+      '<div class="today-actions"><button class="btn xs" id="todaySnooze">Отложить</button>' +
+      '<span class="hint">предложение из данных ленты · отложенное не показывается до срока</span></div>' +
+    '</div>';
+  $('#sumHung').addEventListener('click', function(){
+    state.status = 'applied'; $('#statusFilter').value = 'applied';
+    state.shown = PAGE_SIZE; renderList(); updateFilterCount(); updateHash();
+    switchView('leads');
+    toast('Фильтр: статус «Откликнулся»');
+  });
+  box.querySelectorAll('[data-site]').forEach(function(el){
+    el.addEventListener('click', function(){ toast('Открывается проект RankTracker: ' + el.dataset.site + ' (демо)'); });
+  });
+  $('#todaySnooze').addEventListener('click', function(){
+    var cur = todayQueue[todayIdx];
+    if (cur && cur.lead) {
+      var sn = getSnoozedToday();
+      sn.push({ text: cur.text, until: Date.now() + D });
+      setSnoozedToday(sn);
+    }
+    buildToday(); renderSummary();
+    toast('Отложено до завтра — не покажу повторно до срока');
+  });
+}
+
+/* ══════════ Новости ══════════ */
+function renderNews(){
+  var chips = $('#newsChips'), list = $('#newsList');
+  chips.innerHTML = NEWS_TOPICS.map(function(t){
+    var n = t.v === 'all' ? NEWS.length : NEWS.filter(function(x){ return x.topic === t.v; }).length;
+    return '<button class="chip' + (state.newsTopic === t.v ? ' on' : '') + '" data-topic="' + t.v + '">' + t.label + ' ' + n + '</button>';
+  }).join('');
+  if (panelState.news === 'empty') {
+    list.innerHTML = '<div class="empty" style="padding:22px"><p style="margin:0">Свежих новостей нет.<br>Сбор идёт раз в час.</p></div>'; return;
+  }
+  if (panelState.news === 'error') {
+    list.innerHTML = '<div class="banner-error" style="margin:0"><b>Новости недоступны</b> — источники не ответили. Попробуйте позже.</div>'; return;
+  }
+  var items = NEWS.filter(function(n){ return state.newsTopic === 'all' || n.topic === state.newsTopic; });
+  list.innerHTML = items.map(function(n){
+    return '<li' + (n.read ? ' class="read"' : '') + ' data-nid="' + n.id + '">' +
+      '<div class="news-head"><span class="tag ' + n.tag + '">' + TAG_LABELS[n.tag] + '</span>' +
+      '<span class="srctype">' + (n.stype === 'official' ? 'официальный блог' : 'агрегатор') + '</span>' +
+      (n.dups ? '<span class="dedup-note" data-nact="dedup" title="Показать скрытые дубли">дедуп: скрыто ' + n.dups.length + ' ' + (n.dups.length === 1 ? 'дубль' : 'дубля') + (n.dupOpen ? ' — скрыть' : ' — показать') + '</span>' : '') + '</div>' +
+      '<p>' + esc(n.title) + '</p>' +
+      '<p class="news-why">Почему важно: ' + esc(n.why) + '</p>' +
+      (n.hyp ? '<div class="hypothesis" data-hyp="' + esc(n.hypSite || '') + '" title="Гипотеза — клик открывает проект затронутого сайта в RankTracker">Гипотеза: ' + esc(n.hyp) + ' →</div>' : '') +
+      (n.dups && n.dupOpen ? '<ul class="dup-list">' + n.dups.map(function(d){ return '<li>' + esc(d.t) + ' — ' + esc(d.s) + '</li>'; }).join('') + '</ul>' : '') +
+      '<div class="news-meta"><span>' + esc(n.source) + '</span><span>' + n.time + '</span>' +
+      '<span class="news-actions">' +
+        '<button class="btn xs' + (n.read ? ' act' : '') + '" data-nact="read">Прочитано</button>' +
+        '<button class="btn xs' + (n.later ? ' act' : '') + '" data-nact="later">Разобрать позже</button>' +
+      '</span></div>' +
+    '</li>';
+  }).join('');
+}
+
+/* ══════════ Правила ══════════ */
+var wDraft = null;
+function renderRecalcSummary(){
+  var box = $('#recalcSummary');
+  if (!box) return;
+  if (!lastRecalc) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="logic" style="margin-top:10px">Последний пересчёт (правила v' + lastRecalc.version + '): пересчитано ' + lastRecalc.n + ' · изменили вердикт ' + lastRecalc.m +
+    (lastRecalc.changed.length ? '<ul style="margin:6px 0 0;padding-left:18px">' + lastRecalc.changed.map(function(c){
+      return '<li>«' + esc(c.l.title) + '": ' + VERDICT[c.from].label + ' → ' + VERDICT[c.to].label + '</li>';
+    }).join('') + '</ul>' : '') + '</div>';
+}
+function renderRules(){
+  $('#rulesLogic').textContent = 'Логика вердикта: ' + RULES.logic;
+  $('#rulesThreshold').textContent = RULES.threshold;
+  /* панель обновления v1.1.0 */
+  var up = $('#updPanel');
+  var items = UPDATE.changes.map(function(s){ return '<li>' + esc(s) + '</li>'; }).join('');
+  if (!UPDATE.applied) {
+    up.className = 'panel upd-panel';
+    up.innerHTML = '<h2>Доступно обновление правил: v1.1.0 <span class="panel-sub">от 2026-11-13</span></h2>' +
+      '<ul class="upd-list">' + items + '</ul>' +
+      '<div class="btn-row" style="margin-top:10px"><button class="btn sm primary" id="updApply">Применить и пересчитать историю</button>' +
+      '<span class="hint">версия станет 1.1.0 · сброс вернёт v1.0.0</span></div>';
+  } else {
+    up.className = 'panel upd-panel ok';
+    up.innerHTML = '<h2>Правила v1.1.0 применены <span class="panel-sub">обновление от 2026-11-13</span></h2>' +
+      '<ul class="upd-list">' + items + '</ul>' +
+      '<p class="hint" style="margin-top:8px">HF-07 может быть переведён из отсева во флаг через редактор правил — решение за владельцем.</p>';
+  }
+  var ua = $('#updApply');
+  if (ua) ua.addEventListener('click', function(){ recalcHistory(); });
+  /* changelog */
+  $('#rulesChangelog').innerHTML =
+    '<div class="ver">v1.1.0 — ' + (UPDATE.applied ? 'применены' : 'ожидает применения') + '</div>' +
+    '<ul><li>HF-07 «Вне профиля», FL-08 «Нет описания», hire_rate — демо-поле, пересчёт истории, единая версия — состав: панель «Обновление» выше</li></ul>' +
+    '<div class="ver">v1.0.0 — базовые правила</div>' +
+    '<ul><li>Гео: РФ подходит; KZ/BY для русскоязычных сайтов — подходит; зарубежье — отсев</li>' +
+    '<li>Штат и субподряд подходят</li>' +
+    '<li>Накрутка ПФ/дорвеи/клоакинг — отсев (пока)</li>' +
+    '<li>SMM и контекст — отсев (пока); прочие смежные — ручной разбор</li>' +
+    '<li>Большое бесплатное тестовое и нереалистичные сроки — спорно, не отсев</li></ul>';
+  $('#hfList').innerHTML = RULES.hard_filters.map(function(f){
+    return '<div class="rule-item"><span class="rid">' + f.id + '</span><span class="rn">' + esc(f.name) + '</span><span class="rr">' + esc(f.reason) +
+      (f.id === 'HF-07' ? ' · <span class="hint">переводится во флаг через редактор правил</span>' : '') + '</span></div>';
+  }).join('');
+  $('#flList').innerHTML = RULES.flags.map(function(f){
+    return '<div class="rule-item"><span class="rid">' + f.id + '</span><span class="rn">' + esc(f.name) + '</span><span class="rr">' + esc(f.reason) + '</span></div>';
+  }).join('');
+  var w = wDraft || RULES.weights;
+  $('#weightRows').innerHTML = '<div class="wrow"><label>Порог «Подходит», балл ≥</label>' +
+    '<input type="number" id="thrInput" min="1" max="100" value="' + RULES.threshold + '">' +
+    '<span class="fbar-wrap"></span><span class="wmax">1–100</span></div>' +
+    W_KEYS.map(function(k){
+    return '<div class="wrow"><label>' + W_LABELS[k] + '</label>' +
+      '<input type="number" min="0" max="100" data-w="' + k + '" value="' + w[k] + '">' +
+      '<span class="fbar-wrap"><span class="fbar"><i style="width:' + w[k] + '%"></i></span></span>' +
+      '<span class="wmax">макс ' + w[k] + '</span></div>';
+  }).join('');
+  $('#wRecalc').textContent = UPDATE.applied ? 'Пересчитать историю' : 'Применить v1.1.0 и пересчитать';
+  updateWsum();
+  refreshVersionBadges();
+  renderRecalcSummary();
+}
+function checkLocalEdits(){
+  var w = readDraftWeights(), thrEl = $('#thrInput');
+  localEdits = !!thrEl && (JSON.stringify(w) !== JSON.stringify(RULES.weights) || (parseInt(thrEl.value, 10) || 0) !== RULES.threshold);
+  refreshVersionBadges();
+}
+/* ── Пересчёт истории и сброс (1.4–1.6) ── */
+function isHF(id){ return /^HF-/.test(id || ''); }
+function applyUpdateRules(){
+  UPDATE.applied = true;
+  RULES.hard_filters.push(UPDATE.hf);
+  RULES.flags.push(UPDATE.fl);
+  RULES.version = '1.1.0';
+  LEADS.forEach(function(l){
+    if (l.oop) { l.rule = 'HF-07'; l.verdict = 'reject'; l.verdictReason = 'Вне профиля: ' + l.oop + ' (HF-07) — не SEO-услуга из whitelist'; }
+    if (l.nodesc) { l.rule = 'FL-08'; l.verdict = 'unknown'; l.verdictReason = 'Нет описания — объём работ не ясен (FL-08), ручной разбор'; }
+  });
+}
+function recalcHistory(){
+  var w = readDraftWeights(), s = W_KEYS.reduce(function(a,k){ return a + w[k]; }, 0);
+  if (s !== 100) { w = normalizeWeights(w); toast('Веса нормализованы к 100'); }
+  var thr = Math.max(1, Math.min(100, parseInt(($('#thrInput') || {}).value, 10) || RULES.threshold));
+  RULES.weights = w; RULES.threshold = thr; wDraft = null;
+  if (!UPDATE.applied) applyUpdateRules();
+  else { var p = RULES.version.split('.'); p[2] = (+p[2] || 0) + 1; RULES.version = p.join('.'); }
+  var changed = [];
+  LEADS.forEach(function(l){
+    if (isHF(l.rule)) { l.verdict = 'reject'; return; } /* жёсткие фильтры не меняются */
+    if (l.rule === 'FL-07' || !l.rule) { /* пороговые вердикты пересчитываются */
+      var sc = scoreOf(l), nv = sc >= RULES.threshold ? 'accept' : 'unknown';
+      if (nv !== l.verdict) { changed.push({ l: l, from: l.verdict, to: nv }); l.verdict = nv; }
+      if (l.verdict === 'unknown') { l.rule = 'FL-07'; l.verdictReason = 'Балл ' + sc + ' ниже порога ' + RULES.threshold + ' — спорно (FL-07)'; }
+      else { l.rule = null; l.verdictReason = l.baseVr; }
+    } else { l.verdict = 'unknown'; } /* флаги не меняются: спорно остаётся спорным */
+  });
+  localEdits = false;
+  lastRecalc = { n: LEADS.length, m: changed.length, changed: changed.slice(0, 5), version: RULES.version };
+  renderRules(); renderList(); renderStats(); renderSummary();
+  toast('Пересчитано: ' + lastRecalc.n + ' · изменили вердикт: ' + lastRecalc.m + ' · правила v' + RULES.version, { timeout: 6000 });
+}
+function resetRules(){
+  RULES = JSON.parse(JSON.stringify(BASE_RULES));
+  UPDATE.applied = false; wDraft = null; localEdits = false; lastRecalc = null;
+  LEADS.forEach(function(l){ l.verdict = l.baseV; l.verdictReason = l.baseVr; l.rule = l.baseRule; });
+  renderRules(); renderList(); renderStats(); renderSummary();
+  toast('Сброшено к правилам v1.0.0');
+}
+function updateWsum(){
+  var w = readDraftWeights(), s = W_KEYS.reduce(function(a,k){ return a + w[k]; }, 0);
+  $('#wsumVal').textContent = s;
+  var b = $('#wsumBadge');
+  b.textContent = 'Σ ' + s;
+  b.style.color = s === 100 ? 'var(--accept)' : 'var(--reject)';
+  b.style.background = s === 100 ? 'var(--accept-soft)' : 'var(--reject-soft)';
+  checkLocalEdits();
+}
+function readDraftWeights(){
+  var w = {};
+  W_KEYS.forEach(function(k){
+    var el = document.querySelector('[data-w="' + k + '"]');
+    w[k] = el ? Math.max(0, Math.min(100, parseInt(el.value, 10) || 0)) : RULES.weights[k];
+  });
+  return w;
+}
+function normalizeWeights(w){
+  var s = W_KEYS.reduce(function(a,k){ return a + w[k]; }, 0);
+  if (s <= 0) return JSON.parse(JSON.stringify(RULES.weights));
+  var out = {}, acc = 0;
+  W_KEYS.forEach(function(k, i){
+    if (i === W_KEYS.length - 1) out[k] = Math.max(0, 100 - acc);
+    else { out[k] = Math.round(w[k] / s * 100); acc += out[k]; }
+  });
+  return out;
+}
+
+/* ══════════ Источники ══════════ */
+function renderSources(){
+  var box = $('#srcContent');
+  if (panelState.sources === 'empty') { box.innerHTML = '<div class="empty"><p style="margin:0">Источники не заведены.<br>Добавьте первую площадку.</p></div>'; return; }
+  if (panelState.sources === 'error') { box.innerHTML = '<div class="banner-error" style="margin:0"><b>Таблица источников недоступна</b> — ошибка чтения (500).</div>'; return; }
+  var vLabel = { active:'active', test:'test', check:'check', reject:'reject', closed:'closed' };
+  var hLabel = { ok:'ок', err:'ошибка', unk:'н/д' };
+  box.innerHTML = '<div class="table-wrap"><table class="src"><thead><tr>' +
+    '<th>Площадка</th><th>Тип</th><th>Сбор</th><th>Частота заказов</th><th>Заметки</th><th>Вердикт</th><th>Приор.</th><th>Здоровье</th><th>Последняя проверка</th><th>Комментарий</th>' +
+    '</tr></thead><tbody>' +
+    SOURCES.map(function(s){
+      var down = s.health === 'err';
+      var cls = (s.group ? ' src-group' : '') + (s.sub ? ' src-sub' : '') + (down ? ' down' : '');
+      var retry = (s.health === 'err' || (s.health === 'unk' && s.verdict !== 'closed' && s.verdict !== 'reject')) ? ' <button class="btn xs" data-retry="' + s.id + '">Повторить</button>' : '';
+      return '<tr' + (cls ? ' class="' + cls.trim() + '"' : '') + '>' +
+        '<td class="src-name"><b>' + esc(s.name) + '</b><span class="u">' + esc(s.url).replace(/\./g, '.<wbr>') + '</span> <span class="sid">' + s.id + '</span></td>' +
+        '<td>' + esc(s.type) + '</td><td>' + esc(s.method) + '</td>' +
+        '<td>' + esc(s.freq) + '</td><td>' + esc(s.fit) + '</td>' +
+        '<td><span class="v-badge v-' + vLabel[s.verdict] + '">' + s.verdict + '</span></td>' +
+        '<td>' + (s.pr == null ? '—' : s.pr) + '</td>' +
+        '<td><div class="health"><span class="hdot ' + s.health + '"></span>' + hLabel[s.health] + (s.group ? ' · сводное' : '') + '</div></td>' +
+        '<td><div class="health">' + esc(s.last) + retry + '</div></td>' +
+        '<td>' + esc(s.comment) + '</td>' +
+      '</tr>';
+    }).join('') + '</tbody></table></div>';
+}
+
+/* ══════════ Интеграции ══════════ */
+function renderIntegrations(){
+  $('#hotScore').value = TG.hotScore;
+  $('#hotAge').value = TG.hotAge;
+  $('#reportTime').value = TG.reportTime;
+  $('#followUpDays').value = TG.followUpDays;
+  $('#sourceDownHours').value = TG.sourceDownHours;
+  var down = SOURCES.filter(function(s){ return s.health === 'err'; });
+  var box = $('#tgAlerts');
+  if (down.length) {
+    box.innerHTML = '<div class="alert-box">Алерт: источник «' + esc(down[0].name) + '» лежит дольше ' + TG.sourceDownHours + ' ч — уведомление отправлено в Telegram (12:40). Повторное уведомление по этому источнику — не раньше 18:40: cooldown ' + TG.sourceDownHours + ' ч на источник, чтобы не спамить.</div>';
+  } else box.innerHTML = '';
+}
+
+/* ══════════ Модалка заказа ══════════ */
+function openModal(id){
+  var l = leadById(id);
+  if (!l) return;
+  openLeadId = id;
+  if (l.status === 'new') { l.status = 'viewed'; toast('Статус: Просмотрен'); }
+  $('#mTitle').textContent = l.title;
+  var hotTtl = 'Горячий: балл ≥ ' + TG.hotScore + ' и возраст ≤ ' + TG.hotAge + ' ч — пороги из настроек Telegram';
+  var rej = l.verdict === 'reject';
+  $('#mBadges').innerHTML =
+    '<span class="badge ' + VERDICT[l.verdict].cls + '">' + VERDICT[l.verdict].label + '</span>' +
+    (isHot(l) ? '<span class="badge hot" title="' + esc(hotTtl) + '">Горячий</span>' : '') +
+    (l.dedupOf ? '<span class="badge dup" data-action="open-dup" data-dup="' + l.dedupOf + '" style="cursor:pointer" title="Открыть оригинал этого заказа">дубль на FL</span>' : '') +
+    (DUP_REV[l.id] ? '<span class="badge dup" data-action="open-dup" data-dup="' + DUP_REV[l.id] + '" style="cursor:pointer" title="Этот же заказ опубликован на Kwork — открыть дубль">дубль на Kwork</span>' : '') +
+    '<span class="score ' + (rej ? 'm2' : scoreCls(scoreOf(l))) + '" style="cursor:default">' + scoreOf(l) + ' / 100</span>';
+  var meta = '<span class="src ' + (l.source === 'fl' ? 'fl">FL.ru' : 'kw">Kwork') + '</span>' +
+    '<span>' + esc(l.budget) + ' <span class="bk-chip bk-' + l.budgetKind + '">' + BK_LABELS[l.budgetKind] + '</span></span>' +
+    '<span>' + esc(l.category) + '</span>' +
+    '<span>' + ago(l.publishedAt) + '</span>' +
+    (l.responses != null ? '<span>' + l.responses + ' откликов</span>' : '') +
+    '<span class="badge st">' + STATUS_BY[l.status] + '</span>';
+  $('#mMeta').innerHTML = meta;
+  $('#mDesc').textContent = l.description || 'Полного описания нет — заказ из письма Kwork. Подробности на площадке.';
+  var cs = $('#mClientSec');
+  if (l.client) {
+    var ch;
+    if (l.source === 'kwork') ch = '<span>' + esc(l.client.name) + '</span><span title="Демо-поле: «найм N%» — источник и определение не подтверждены; в прод-схеме поля нет">найм: ' + l.client.hire + '% (демо)</span>';
+    else {
+      ch = '<span>★ ' + l.client.r + '</span><span>на FL с ' + l.client.since + '</span><span>' + l.client.pr + ' проектов</span>' +
+        '<span>' + (l.client.sd ? 'safe-deal' : 'без safe-deal') + '</span>' +
+        (l.client.bl ? '<span class="neg">чёрный список</span>' : '');
+    }
+    $('#mClient').innerHTML = ch; cs.classList.remove('hidden');
+  } else cs.classList.add('hidden');
+  if (l.dedupOf) {
+    var orig = leadById(l.dedupOf);
+    $('#mDesc').textContent += orig ? '\n\nЭто дубль заказа: «' + orig.title + '» (' + (orig.source === 'fl' ? 'FL.ru' : 'Kwork') + '). В счётчиках заказ учитывается один раз.' : '';
+  }
+  if (DUP_REV[l.id]) {
+    var dup = leadById(DUP_REV[l.id]);
+    $('#mDesc').textContent += '\n\nЭтот же заказ опубликован на ' + (dup.source === 'kwork' ? 'Kwork' : 'FL.ru') + ' (карточка-дубль связана). В счётчиках заказ учитывается один раз.';
+  }
+  $('#mVerdict').innerHTML = 'Вердикт: ' + VERDICT[l.verdict].label.toLowerCase() + ' · ' + esc(l.verdictReason) + ' · правила ' + versionBadgeHTML();
+  var arl = appliedRulesLine(l);
+  $('#mFactors').innerHTML = (arl ? '<div class="applied-rules" style="margin:0 0 8px">' + arl + '</div>' : '') + factorsHTML(l);
+  var c = compsOf(l), sum = W_KEYS.reduce(function(a,k){ return a + c[k]; }, 0);
+  $('#mScoreSum').innerHTML = 'Сумма компонентов: <b>' + sum + '</b> — совпадает с баллом карточки. Веса правила ' + versionBadgeHTML() + '.';
+  $('#mDraft').value = buildDraft(l);
+  $('#mCopy').classList.toggle('hidden', rej);
+  $('#mRestore').classList.toggle('hidden', !rej);
+  $('#mStatus').innerHTML = STATUS.map(function(s){
+    return '<option value="' + s.v + '"' + (s.v === l.status ? ' selected' : '') + '>' + s.label + '</option>';
+  }).join('');
+  var hint = '', w = waitingDays(l);
+  if (w) hint = 'Отклик отправлен ' + w + ' ' + (w === 1 ? 'день' : 'дн.') + ' назад — ответа не было.';
+  if (w >= 7) hint += ' Пора заархивировать.';
+  $('#mStatusHint').innerHTML = hint;
+  $('#mNotes').value = l.notes;
+  $('#mNext').value = l.next;
+  $('#mUrl').href = l.url;
+  $('#overlay').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+function closeModal(){
+  $('#overlay').classList.add('hidden');
+  document.body.style.overflow = '';
+  openLeadId = null;
+}
+
+/* ══════════ Автосохранение ══════════ */
+var saveTimers = {};
+function queueSave(id, fn){
+  clearTimeout(saveTimers[id]);
+  saveTimers[id] = setTimeout(function(){ fn(); toast('Сохранено'); }, 700);
+}
+
+/* ══════════ Плашка «N новых» ══════════ */
+function queueNew(){
+  if (freshAdded || !PENDING.length) { toast('Новых заказов нет'); return; }
+  pendingQueue = PENDING.slice();
+  $('#newText').textContent = 'Появились ' + pendingQueue.length + ' новых заказа — не показываю, пока вы не попросите';
+  $('#newBanner').classList.remove('hidden');
+}
+$('#showNew').addEventListener('click', function(){
+  pendingQueue.forEach(function(r){
+    var fl = r.src === 'fl';
+    LEADS.push({
+      id: r.id, source: r.src, title: r.t, category: r.cat,
+      budget: r.bt, budgetValue: r.bv, budgetKind: r.bk || 'fixed',
+      url: fl ? 'https://www.fl.ru/projects/' + r.id.split('-')[1] + '/' : 'https://kwork.ru/projects/' + r.id.split('-')[1],
+      publishedAt: NOW - r.h * H, verdict: r.v, verdictReason: r.vr,
+      serviceKind: r.sk, engagement: r.eng, responses: (r.resp === undefined ? null : r.resp),
+      client: r.cl || null, status: r.st, draftType: r.type, notes: '', next: '',
+      appliedAt: null, description: r.desc || '', hasSite: fl, hasTask: true, hasBudget: r.bv > 0,
+      dedupOf: null, snoozedUntil: null, draftOverride: null, fresh: true,
+      rule: null, oop: null, nodesc: false, demoReason: null, baseV: r.v, baseVr: r.vr, baseRule: null
+    });
+  });
+  pendingQueue = []; freshAdded = true;
+  $('#newBanner').classList.add('hidden');
+  state.shown += 2; /* новые заказы сразу видимы на текущей странице */
+  renderList(); renderStats();
+  toast('Добавлено в ленту: 2 заказа');
+});
+$('#demoNew').addEventListener('click', queueNew);
+
+/* ══════════ Общие клики ══════════ */
+document.addEventListener('click', function(e){
+  var el = e.target.closest('[data-action], [data-panel], [data-close], [data-open], [data-topic], [data-nact], [data-retry], [data-hyp], .chip');
+  if (!el) {
+    var open = document.querySelector('.menu:not(.hidden)');
+    if (open && !open.contains(e.target)) open.classList.add('hidden');
+    if (!e.target.closest('#scorePop') && !e.target.closest('[data-action="score"]')) closeScorePop();
+    return;
+  }
+  if (el.hasAttribute('data-close')) { closeModal(); $('#helpOverlay').classList.add('hidden'); return; }
+  if (el.hasAttribute('data-panel')) {
+    panelState[el.dataset.panel] = el.dataset.state;
+    if (el.dataset.panel === 'feed') { state.feedState = el.dataset.state; renderList(); }
+    if (el.dataset.panel === 'summary') renderSummary();
+    if (el.dataset.panel === 'news') renderNews();
+    if (el.dataset.panel === 'sources') renderSources();
+    return;
+  }
+  if (el.hasAttribute('data-open')) { openModal(el.dataset.open); return; }
+  if (el.hasAttribute('data-topic')) { state.newsTopic = el.dataset.topic; renderNews(); return; }
+  if (el.hasAttribute('data-hyp')) {
+    toast('Открывается проект RankTracker: ' + (el.dataset.hyp || 'затронутый сайт') + ' (демо)');
+    return;
+  }
+  if (el.hasAttribute('data-nact')) {
+    var li = el.closest('li'), n = NEWS.find(function(x){ return x.id === +li.dataset.nid; });
+    if (n) {
+      if (el.dataset.nact === 'read') n.read = !n.read;
+      else if (el.dataset.nact === 'later') n.later = !n.later;
+      else if (el.dataset.nact === 'dedup') n.dupOpen = !n.dupOpen;
+      saveNewsStates();
+      renderNews();
+    }
+    return;
+  }
+  if (el.hasAttribute('data-retry')) {
+    var s = SOURCES.find(function(x){ return x.id === el.dataset.retry; });
+    if (s) {
+      el.textContent = '…'; el.disabled = true;
+      setTimeout(function(){
+        el.disabled = false;
+        if (s.health === 'err' && s.id === 'youdo') { toast('«' + s.name + '»: всё ещё лежит (503). Алерт в cooldown — повторное уведомление не раньше 18:40'); renderSources(); }
+        else { s.health = 'ok'; s.last = 'только что'; toast('«' + s.name + '»: проверен, сбор работает'); renderSources(); renderIntegrations(); }
+      }, 1000);
+    }
+    return;
+  }
+  var card = el.closest('.card');
+  var l = card ? leadById(card.dataset.id) : null;
+  var a = el.dataset.action;
+  if (a === 'open' && l) openModal(l.id);
+  else if (a === 'open-dup') {
+    var target = leadById(el.dataset.dup || (l && l.dedupOf));
+    if (target) openModal(target.id);
+  }
+  else if (a === 'score' && l) {
+    var wasHidden = $('#scorePop').classList.contains('hidden');
+    closeScorePop();
+    if (wasHidden) openScorePop(el, l);
+  }
+  else if (a === 'copy' && l) copyText(buildDraft(l), 'Отклик скопирован — можно вставлять на площадке', l);
+  else if (a === 'restore' && l) {
+    /* подтверждение в два шага: повторный клик в течение 4 с подтверждает возврат */
+    if (el.dataset.armed === '1') { restoreLead(l); }
+    else {
+      el.dataset.armed = '1';
+      el.classList.add('restore-confirm');
+      el.textContent = 'Точно вернуть?';
+      setTimeout(function(){
+        if (el.isConnected) { el.dataset.armed = ''; el.classList.remove('restore-confirm'); el.textContent = 'Вернуть в разбор'; }
+      }, 4000);
+    }
+  }
+  else if (a === 'menu') {
+    var m = el.parentElement.querySelector('.menu');
+    var wasOpen = !m.classList.contains('hidden');
+    document.querySelectorAll('.menu').forEach(function(x){ x.classList.add('hidden'); });
+    m.classList.toggle('hidden', wasOpen);
+  }
+  else if (a === 'set-status' && l) { setStatus(l, el.dataset.status); toast('Статус: ' + STATUS_BY[l.status]); }
+  else if (a === 'remind' && l) { toast('Напоминание поставлено — попадёт в утренний доклад'); }
+  else if (a === 'snooze' && l) {
+    l.snoozedUntil = Date.now() + D;
+    renderList(); renderSummary();
+    toast('Подсветка скрыта на день');
+  }
+  else if (a === 'collect') { $('#fetchNow').click(); }
+});
+
+$('#overlay').addEventListener('click', function(e){ if (e.target === this) closeModal(); });
+$('#helpOverlay').addEventListener('click', function(e){ if (e.target === this) this.classList.add('hidden'); });
+window.addEventListener('scroll', function(){
+  if (popAnchor && !$('#scorePop').classList.contains('hidden')) positionScorePop(popAnchor);
+}, { passive: true });
+
+/* ══════════ Фильтры, URL, пресеты ══════════ */
+function updateHash(){
+  var p = new URLSearchParams();
+  p.set('view', state.view);
+  if (state.view === 'leads') {
+    p.set('src', state.source); p.set('vd', state.verdict); p.set('st', state.status);
+    p.set('sort', state.sort);
+    if (state.q.trim()) p.set('q', state.q.trim());
+  }
+  history.replaceState(null, '', '#' + p.toString());
+}
+function parseHash(){
+  if (!location.hash || location.hash === '#') return;
+  var p = new URLSearchParams(location.hash.slice(1));
+  if (p.get('view')) switchView(p.get('view'), true);
+  if (p.get('src')) { state.source = p.get('src'); setSeg('#segSource', state.source); }
+  if (p.get('vd')) { state.verdict = p.get('vd'); setSeg('#segVerdict', state.verdict); }
+  if (p.get('st')) { state.status = p.get('st'); $('#statusFilter').value = state.status === 'any' ? 'any' : state.status; }
+  if (p.get('sort')) { state.sort = p.get('sort'); $('#sortBy').value = state.sort; }
+  if (p.get('q')) { state.q = p.get('q'); $('#q').value = state.q; }
+  state.shown = PAGE_SIZE;
+  renderList(); updateFilterCount();
+}
+function setSeg(sel, val){
+  document.querySelectorAll(sel + ' button').forEach(function(x){ x.classList.toggle('on', x.dataset.val === val); });
+}
+['segSource', 'segVerdict'].forEach(function(segId){
+  $('#' + segId).addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    this.querySelectorAll('button').forEach(function(x){ x.classList.remove('on'); });
+    b.classList.add('on');
+    state[segId === 'segSource' ? 'source' : 'verdict'] = b.dataset.val;
+    state.shown = PAGE_SIZE; renderList(); updateFilterCount(); updateHash();
+  });
+});
+$('#statusFilter').addEventListener('change', function(){ state.status = this.value; state.shown = PAGE_SIZE; renderList(); updateFilterCount(); updateHash(); });
+$('#sortBy').addEventListener('change', function(){ state.sort = this.value; state.shown = PAGE_SIZE; renderList(); updateHash(); });
+var qTimer = null;
+$('#q').addEventListener('input', function(){
+  var v = this.value; clearTimeout(qTimer);
+  qTimer = setTimeout(function(){ state.q = v; state.shown = PAGE_SIZE; renderList(); updateFilterCount(); updateHash(); }, 180);
+});
+$('#resetFilters').addEventListener('click', function(){
+  state.source = 'all'; state.verdict = 'main'; state.status = 'any'; state.q = ''; state.shown = PAGE_SIZE;
+  setSeg('#segSource', 'all'); setSeg('#segVerdict', 'main');
+  $('#statusFilter').value = 'any'; $('#q').value = '';
+  renderList(); updateFilterCount(); updateHash();
+});
+$('#moreBtn').addEventListener('click', function(){ state.shown += PAGE_SIZE; renderList(); });
+$('#filtersToggle').addEventListener('click', function(){
+  var f = $('#filters'), open = f.classList.toggle('open');
+  this.setAttribute('aria-expanded', open);
+  $('#filtersLabel').textContent = open ? 'Скрыть фильтры' : 'Фильтры';
+});
+$('#kbdHint').addEventListener('click', function(){ $('#helpOverlay').classList.remove('hidden'); });
+function updateFilterCount(){
+  var n = 0;
+  if (state.source !== 'all') n++;
+  if (state.verdict !== 'main') n++;
+  if (state.status !== 'any') n++;
+  if (state.q.trim()) n++;
+  var c = $('#filtersCount');
+  c.style.display = n ? '' : 'none';
+  c.textContent = n;
+}
+/* Пресеты */
+function getPresets(){ try { return JSON.parse(localStorage.getItem('leads-presets') || '[]'); } catch(e){ return []; } }
+function setPresets(p){ try { localStorage.setItem('leads-presets', JSON.stringify(p)); } catch(e){} }
+function renderPresets(){
+  var list = getPresets();
+  $('#presetList').innerHTML = list.length ? list.map(function(p, i){
+    return '<button data-preset="' + i + '">«' + esc(p.name) + '» <span class="check" data-preset-del="' + i + '" title="Удалить" style="color:var(--reject)">✕</span></button>';
+  }).join('') + '<button id="presetClear" style="color:var(--reject)">Удалить все пресеты</button>' : '<div class="hint" style="padding:6px 10px">Пресетов пока нет — настройте фильтры и сохраните.</div>';
+}
+$('#presetsBtn').addEventListener('click', function(e){
+  e.stopPropagation();
+  var pop = $('#presetPop');
+  var was = !pop.classList.contains('hidden');
+  document.querySelectorAll('.menu').forEach(function(x){ x.classList.add('hidden'); });
+  if (!was) { renderPresets(); pop.classList.remove('hidden'); }
+});
+$('#presetSave').addEventListener('click', function(){
+  var name = $('#presetName').value.trim();
+  if (!name) { toast('Введите название пресета'); return; }
+  var p = getPresets();
+  p.push({ name:name, src:state.source, vd:state.verdict, st:state.status, q:state.q, sort:state.sort });
+  setPresets(p);
+  $('#presetName').value = '';
+  renderPresets();
+  toast('Пресет «' + name + '» сохранён');
+});
+$('#presetList').addEventListener('click', function(e){
+  if (e.target.id === 'presetClear') {
+    setPresets([]); renderPresets();
+    toast('Все пресеты удалены');
+    return;
+  }
+  var del = e.target.closest('[data-preset-del]');
+  if (del) {
+    e.stopPropagation();
+    var p = getPresets(); p.splice(+del.dataset.presetDel, 1); setPresets(p); renderPresets();
+    return;
+  }
+  var b = e.target.closest('[data-preset]');
+  if (!b) return;
+  var p = getPresets()[+b.dataset.preset];
+  if (!p) return;
+  state.source = p.src; state.verdict = p.vd; state.status = p.st; state.q = p.q || ''; state.sort = p.sort || 'score'; state.shown = PAGE_SIZE;
+  setSeg('#segSource', p.src); setSeg('#segVerdict', p.vd);
+  $('#statusFilter').value = p.st; $('#q').value = p.q || ''; $('#sortBy').value = state.sort;
+  renderList(); updateFilterCount(); updateHash();
+  $('#presetPop').classList.add('hidden');
+  toast('Пресет «' + p.name + '» применён');
+});
+
+/* ══════════ Сбор ══════════ */
+$('#fetchNow').addEventListener('click', function(){
+  toast('Сбор запущен — проверяю FL.ru…');
+  var self = this;
+  self.disabled = true;
+  setTimeout(function(){
+    self.disabled = false;
+    $('#lastFetch').textContent = 'только что';
+    queueNew();
+  }, 1400);
+});
+
+/* ══════════ Модалка: поля ══════════ */
+$('#mStatus').addEventListener('change', function(){
+  var l = leadById(openLeadId); if (!l) return;
+  setStatus(l, this.value);
+  toast('Статус: ' + STATUS_BY[l.status]);
+});
+$('#mDraft').addEventListener('input', function(){
+  var v = this.value, id = openLeadId;
+  queueSave('draft', function(){ var l = leadById(id); if (l) l.draftOverride = v; });
+});
+$('#mRebuild').addEventListener('click', function(){
+  var l = leadById(openLeadId); if (!l) return;
+  l.draftOverride = null;
+  $('#mDraft').value = buildDraft(l);
+  toast('Черновик пересобран из шаблона «' + l.draftType + '»');
+});
+$('#mNotes').addEventListener('input', function(){
+  var v = this.value, id = openLeadId;
+  queueSave('notes', function(){ var l = leadById(id); if (l) l.notes = v; });
+});
+$('#mNext').addEventListener('change', function(){
+  var l = leadById(openLeadId); if (!l) return;
+  l.next = this.value;
+  renderList();
+  toast('Следующее действие: ' + (this.value ? fmtDate(this.value) : 'не задано'));
+});
+$('#mCopy').addEventListener('click', function(){
+  var l = leadById(openLeadId);
+  if (l) copyText($('#mDraft').value, 'Отклик скопирован — можно вставлять на площадке', l);
+});
+$('#mRestore').addEventListener('click', function(){
+  var l = leadById(openLeadId); if (!l) return;
+  toast('Вернуть «' + (l.title.length > 44 ? l.title.slice(0, 44) + '…' : l.title) + '» в ручной разбор?', { action:{ label:'Вернуть', onClick:function(){ restoreLead(l); openModal(l.id); } }, timeout: 7000 });
+});
+
+/* ══════════ Правила: события ══════════ */
+$('#weightRows').addEventListener('input', updateWsum);
+$('#wRecalc').addEventListener('click', recalcHistory);
+$('#wReset').addEventListener('click', resetRules);
+
+/* ══════════ Источники: события ══════════ */
+$('#addSrcBtn').addEventListener('click', function(){ $('#srcForm').classList.toggle('hidden'); });
+$('#nsCancel').addEventListener('click', function(){ $('#srcForm').classList.add('hidden'); });
+/* валидация формы: url/handle, тип сбора, дубли запрещены (5.4) */
+$('#nsAdd').addEventListener('click', function(){
+  var name = $('#nsName').value.trim();
+  var url = $('#nsUrl').value.trim();
+  var method = $('#nsCollect').value;
+  if (!name) { toast('Введите название источника'); return; }
+  if (!url) { toast('Укажите URL или @handle — по нему идёт сбор'); return; }
+  var okHandle = /^@[\w]{3,}$/.test(url) || /^https?:\/\/[\w.-]+/.test(url) || /^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(url);
+  if (!okHandle) { toast('Не похоже на адрес: нужен домен, ссылку или @handle'); return; }
+  if (method === 'tg' && !/^(https?:\/\/t\.me\/|t\.me\/|@)/i.test(url)) { toast('Для сбора «tg» нужен @handle или ссылка t.me/…'); return; }
+  var dup = SOURCES.filter(function(s){ return (s.url || '').toLowerCase() === url.toLowerCase(); })[0];
+  if (dup) { toast('Источник с таким URL уже заведён: ' + dup.name); return; }
+  SOURCES.unshift({ id:'new-' + Date.now(), name:name, url:url, type:$('#nsType').value,
+    method:method, freq:'н/д', fit:'—', verdict:'check', pr:null, health:'unk', last:'не проверялся', comment:'Добавлен вручную (демо)' });
+  $('#nsName').value = ''; $('#nsUrl').value = '';
+  $('#srcForm').classList.add('hidden');
+  renderSources();
+  toast('Источник «' + name + '» добавлен с вердиктом check');
+});
+
+/* ══════════ Интеграции: события ══════════ */
+$('#tgSave').addEventListener('click', function(){
+  TG.hotScore = Math.max(0, Math.min(100, parseInt($('#hotScore').value, 10) || 80));
+  TG.hotAge = Math.max(1, parseInt($('#hotAge').value, 10) || 2);
+  TG.reportTime = $('#reportTime').value || '09:00';
+  TG.followUpDays = Math.max(1, parseInt($('#followUpDays').value, 10) || 3);
+  TG.sourceDownHours = Math.max(1, parseInt($('#sourceDownHours').value, 10) || 6);
+  try { localStorage.setItem('leads-tg', JSON.stringify(TG)); } catch(e){}
+  renderIntegrations(); renderList(); renderSummary();
+  toast('Настройки Telegram сохранены — применены сразу к «Горячему» и follow-up');
+});
+$('#tgReset').addEventListener('click', function(){
+  TG = { hotScore: 80, hotAge: 2, reportTime: '09:00', followUpDays: 3, sourceDownHours: 6 };
+  try { localStorage.setItem('leads-tg', JSON.stringify(TG)); } catch(e){}
+  renderIntegrations(); renderList(); renderSummary();
+  toast('Настройки Telegram сброшены к дефолту: 80 / 2 ч / 09:00 / 3 дн / 6 ч');
+});
+
+/* ══════════ Навигация по вкладкам ══════════ */
+function switchView(v, silent){
+  closeScorePop();
+  state.view = v;
+  ['leads','rules','sources','integrations'].forEach(function(x){
+    $('#view-' + x).classList.toggle('hidden', x !== v);
+  });
+  document.querySelectorAll('#nav button').forEach(function(b){ b.classList.toggle('on', b.dataset.view === v); });
+  if (!silent) updateHash();
+  window.scrollTo(0, 0);
+}
+$('#nav').addEventListener('click', function(e){
+  var b = e.target.closest('button'); if (b) switchView(b.dataset.view);
+});
+
+/* ══════════ Горячие клавиши ══════════ */
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape') {
+    closeModal(); $('#helpOverlay').classList.add('hidden'); closeScorePop();
+    document.querySelectorAll('.menu').forEach(function(x){ x.classList.add('hidden'); });
+    return;
+  }
+  var tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
+  if (state.view !== 'leads') return;
+  if (e.key === '?' || e.key === '/') { e.preventDefault(); $('#helpOverlay').classList.remove('hidden'); return; }
+  if (!$('#overlay').classList.contains('hidden') || !$('#helpOverlay').classList.contains('hidden')) return;
+  var arr = filtered();
+  if (e.key === 'j' || e.key === 'J') {
+    e.preventDefault();
+    state.sel = Math.min(state.sel + 1, arr.length - 1);
+    renderList();
+    var c = document.querySelector('.card.kselected');
+    if (c) c.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'k' || e.key === 'K') {
+    e.preventDefault();
+    state.sel = Math.max(state.sel - 1, 0);
+    renderList();
+    var c2 = document.querySelector('.card.kselected');
+    if (c2) c2.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'o' || e.key === 'O') {
+    var l = arr[state.sel]; if (l) { e.preventDefault(); openModal(l.id); }
+  } else if (e.key === 'c' || e.key === 'C') {
+    var l2 = arr[state.sel];
+    if (l2) {
+      e.preventDefault();
+      if (l2.verdict === 'reject') toast('Заказ отклонён — сначала верните его в разбор');
+      else copyText(buildDraft(l2), 'Отклик скопирован — можно вставлять на площадке', l2);
+    }
+  } else if (['1','2','3','4','5'].indexOf(e.key) !== -1) {
+    var l3 = arr[state.sel]; if (!l3) return;
+    var map = { '1':'new', '2':'viewed', '3':'applied', '4':'replied', '5':'declined' };
+    e.preventDefault();
+    setStatus(l3, map[e.key]);
+    toast('Статус: ' + STATUS_BY[l3.status]);
+  }
+});
+
+/* ══════════ Тема ══════════ */
+function applyThemeIcons(){
+  var dark = document.documentElement.dataset.theme === 'dark';
+  $('.ico-moon').classList.toggle('hidden', dark);
+  $('.ico-sun').classList.toggle('hidden', !dark);
+}
+$('#themeToggle').addEventListener('click', function(){
+  var t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('leads-theme', t); } catch(e){}
+  applyThemeIcons();
+});
+
+/* ══════════ Старт ══════════ */
+applyThemeIcons();
+buildToday();
+renderStats();
+renderList();
+renderSummary();
+renderNews();
+renderRules();
+renderSources();
+renderIntegrations();
+updateFilterCount();
+parseHash();
+</script>
+</body>
+</html>

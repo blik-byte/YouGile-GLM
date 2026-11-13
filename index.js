@@ -297,6 +297,45 @@ app.patch('/api/leads/:id', requireAdmin, async (req, res) => {
   }
 });
 
+// Страница ленты: макет v3 с реальными данными.
+// Токен передаётся параметром (браузер не умеет заголовки при переходе),
+// страница сразу запоминает его для запросов к API.
+app.get('/leads', async (req, res) => {
+  const expected = process.env.ADMIN_TOKEN;
+  const passed = String(req.query.token || '');
+
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+
+  if (expected && passed !== expected) {
+    return res.status(401).type('html').send(
+      '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="robots" content="noindex">'
+        + '<title>Лента заказов</title><style>body{font:15px/1.5 system-ui;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0}'
+        + 'form{display:flex;gap:8px;align-items:center}input{padding:8px 10px;border:1px solid #ccc;border-radius:6px;min-width:260px}'
+        + 'button{padding:8px 14px;border:0;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer}</style></head><body>'
+        + '<form onsubmit="location.href=\'/leads?token=\'+encodeURIComponent(this.t.value);return false">'
+        + '<input name="t" placeholder="ADMIN_TOKEN" autofocus><button>Открыть</button></form></body></html>'
+    );
+  }
+
+  try {
+    const store = require('./lib/leads-store');
+    const health = require('./lib/source-health');
+    const page = require('./lib/leads-page');
+
+    const { items } = await store.listLeads({ limit: 200 });
+    const state = await health.getHealth('fl', { downAlertHours: Number(process.env.SOURCE_DOWN_HOURS) || 6 });
+
+    const html = page.injectData(page.loadTemplate(), {
+      orders: items.map((doc) => page.mapLead(doc)),
+      health: state,
+    });
+
+    res.type('html').send(html);
+  } catch (error) {
+    res.status(500).type('text/plain; charset=utf-8').send(`Ошибка страницы: ${error.message}`);
+  }
+});
+
 // Состояние интеграции с MODX: доступен ли коннектор и в каком он режиме
 app.get('/api/modx/status', requireAdmin, async (req, res) => {
   try {
