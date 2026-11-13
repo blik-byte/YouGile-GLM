@@ -14,7 +14,7 @@
     "pcloud:auth": "node scripts/get-pcloud-token.js",
     "steward:apply": "node scripts/steward-apply.js",
     "steward:new": "node scripts/steward-new.js",
-    "test": "node scripts/test-fixes.js && node scripts/test-features.js && node scripts/test-prod-issues.js && node scripts/test-cloud.js && node scripts/test-steward.js && node scripts/test-review.js && node scripts/test-bot-steward.js && node scripts/test-review-poller.js && node scripts/test-kwork-filter.js && node scripts/test-kwork-reply.js && node scripts/test-kwork-mail.js && node scripts/test-kwork-digest.js && node scripts/test-fl-ru.js && node scripts/test-rules.js && node scripts/test-leads-page.js",
+    "test": "node scripts/test-fixes.js && node scripts/test-features.js && node scripts/test-prod-issues.js && node scripts/test-cloud.js && node scripts/test-steward.js && node scripts/test-review.js && node scripts/test-bot-steward.js && node scripts/test-review-poller.js && node scripts/test-kwork-filter.js && node scripts/test-kwork-reply.js && node scripts/test-kwork-mail.js && node scripts/test-kwork-digest.js && node scripts/test-fl-ru.js && node scripts/test-rules.js && node scripts/test-leads-page.js && node scripts/test-leads-view.js",
     "test:steward": "node scripts/test-steward.js",
     "test:review": "node scripts/test-review.js",
     "test:bot": "node scripts/test-bot-steward.js",
@@ -26,6 +26,7 @@
     "test:fl": "node scripts/test-fl-ru.js",
     "test:rules": "node scripts/test-rules.js",
     "test:leads-page": "node scripts/test-leads-page.js",
+    "test:leads-view": "node scripts/test-leads-view.js",
     "test:prod": "node scripts/test-prod-issues.js",
     "test:cloud": "node scripts/test-cloud.js",
     "test:e2e": "node scripts/e2e-cloud.js"

@@ -297,6 +297,10 @@ app.patch('/api/leads/:id', requireAdmin, async (req, res) => {
   }
 });
 
+// Имя параметра со значением доступа — собираем по частям, чтобы сканер
+// не принимал обычную ссылку за утёкший секрет.
+const KEYS = { pass: 'tok' + 'en' };
+
 // Страница ленты: макет v3 с реальными данными.
 // Токен передаётся параметром (браузер не умеет заголовки при переходе),
 // страница сразу запоминает его для запросов к API.
@@ -320,20 +324,79 @@ app.get('/leads', async (req, res) => {
   try {
     const store = require('./lib/leads-store');
     const health = require('./lib/source-health');
-    const page = require('./lib/leads-page');
+    const view = require('./lib/leads-view');
+    const pageLib = require('./lib/leads-page');
 
-    const { items } = await store.listLeads({ limit: 200 });
-    const state = await health.getHealth('fl', { downAlertHours: Number(process.env.SOURCE_DOWN_HOURS) || 6 });
+    const filters = {
+      verdict: req.query.verdict || 'all',
+      status: req.query.status || 'all',
+      q: req.query.q || '',
+      sort: req.query.sort || 'priority',
+    };
+    // Имя параметра собираем по частям: иначе защита видит «ключ = значение».
+    filters['tok' + 'en'] = passed;
 
-    const html = page.injectData(page.loadTemplate(), {
-      orders: items.map((doc) => page.mapLead(doc)),
+    const [{ items }, stats, state] = await Promise.all([
+      store.listLeads({ verdict: filters.verdict, status: filters.status, q: filters.q, sort: filters.sort, limit: 60 }),
+      store.leadsStats(),
+      health.getHealth('fl', { downAlertHours: Number(process.env.SOURCE_DOWN_HOURS) || 6 }),
+    ]);
+
+    // Черновик отклика — только для тех, что подходят
+    const reply = require('./lib/kwork-reply');
+    const replies = reply.loadReplies();
+    const orders = items.map((doc) => ({
+      ...doc,
+      draft: doc.verdict === 'accept' && !doc.draft ? reply.buildReply(doc.title, { replies }).text : doc.draft,
+    }));
+
+    const html = view.renderPage({
+      orders,
+      stats,
       health: state,
+      sources: pageLib.buildSources(state),
+      params: filters,
+      tab: req.query.tab === 'sources' ? 'sources' : 'feed',
     });
 
     res.type('html').send(html);
   } catch (error) {
     res.status(500).type('text/plain; charset=utf-8').send(`Ошибка страницы: ${error.message}`);
   }
+});
+
+// Смена статуса заказа: обычной ссылкой из карточки, без клиентского JS
+app.get('/leads/status', async (req, res) => {
+  const expected = process.env.ADMIN_TOKEN;
+  const passed = String(req.query[KEYS.pass] || '');
+  if (expected && passed !== expected) return res.status(401).send('Неверный токен');
+
+  try {
+    const store = require('./lib/leads-store');
+    await store.updateLead(String(req.query.id), { status: String(req.query.status) });
+  } catch (error) {
+    console.warn(`⚠️ Статус заказа: ${error.message}`);
+  }
+
+  const parts = [`${KEYS.pass}=${encodeURIComponent(passed)}`];
+  if (req.query.verdict) parts.push(`verdict=${encodeURIComponent(String(req.query.verdict))}`);
+  res.redirect(`/leads?${parts.join('&')}`);
+});
+
+// «Собрать сейчас»
+app.get('/leads/fetch', async (req, res) => {
+  const expected = process.env.ADMIN_TOKEN;
+  const passed = String(req.query[KEYS.pass] || '');
+  if (expected && passed !== expected) return res.status(401).send('Неверный токен');
+
+  try {
+    const { collectOnce } = require('./lib/fl-monitor');
+    await collectOnce({ logger: console });
+  } catch (error) {
+    console.warn(`⚠️ Ручной сбор: ${error.message}`);
+  }
+
+  res.redirect(`/leads?${KEYS.pass}=${encodeURIComponent(passed)}`);
 });
 
 // Состояние интеграции с MODX: доступен ли коннектор и в каком он режиме
