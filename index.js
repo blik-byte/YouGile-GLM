@@ -383,9 +383,38 @@ app.get('/leads/status', async (req, res) => {
   res.redirect(`/leads?${parts.join('&')}`);
 });
 
-// «Собрать сейчас»
-app.get('/leads/fetch', async (req, res) => {
+// Черновик отклика отдельной страницей: выделить и скопировать целиком
+app.get('/leads/draft', async (req, res) => {
   const expected = process.env.ADMIN_TOKEN;
+  const passed = String(req.query[KEYS.pass] || '');
+  if (expected && passed !== expected) return res.status(401).send('Неверный токен');
+
+  try {
+    const store = require('./lib/leads-store');
+    const reply = require('./lib/kwork-reply');
+    const { esc } = require('./lib/leads-view');
+
+    const lead = await store.getLead(String(req.query.id));
+    if (!lead) return res.status(404).type('text/plain; charset=utf-8').send('Заказ не найден');
+
+    const text = lead.draft || reply.buildReply(lead.title).text;
+
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    res.type('html').send(`<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="robots" content="noindex">
+<title>Черновик отклика</title>
+<style>body{font:15px/1.55 system-ui,sans-serif;margin:24px;max-width:760px;color:#1b2436}
+pre{white-space:pre-wrap;background:#f5f7fb;border:1px solid #e2e7f0;border-radius:10px;padding:14px}
+.muted{color:#61708b;font-size:13px}</style></head>
+<body><h2>${esc(lead.title)}</h2>
+<p class="muted">Выделите текст и скопируйте: Ctrl+A, затем Ctrl+C.</p>
+<pre>${esc(text)}</pre></body></html>`);
+  } catch (error) {
+    res.status(500).type('text/plain; charset=utf-8').send(error.message);
+  }
+});
+
+// «Собрать сейчас»
+app.get('/leads/fetch', async (req, res) => {  const expected = process.env.ADMIN_TOKEN;
   const passed = String(req.query[KEYS.pass] || '');
   if (expected && passed !== expected) return res.status(401).send('Неверный токен');
 
