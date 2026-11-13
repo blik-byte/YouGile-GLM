@@ -342,6 +342,8 @@ app.get('/leads', async (req, res) => {
       health.getHealth('fl', { downAlertHours: Number(process.env.SOURCE_DOWN_HOURS) || 6 }),
     ]);
 
+    const settings = await require('./lib/settings').get();
+
     // Черновик отклика — только для тех, что подходят
     const reply = require('./lib/kwork-reply');
     const replies = reply.loadReplies();
@@ -357,7 +359,9 @@ app.get('/leads', async (req, res) => {
       sources: pageLib.buildSources(state),
       params: filters,
       rules: require('./lib/rules').loadRules(),
-      tab: req.query.tab === 'sources' ? 'sources' : req.query.tab === 'rules' ? 'rules' : 'feed',
+      settings,
+      saved: req.query.saved === '1' ? '1' : '0',
+      tab: ['sources', 'rules', 'settings'].includes(String(req.query.tab)) ? String(req.query.tab) : 'feed',
     });
 
     res.type('html').send(html);
@@ -382,6 +386,35 @@ app.get('/leads/status', async (req, res) => {
   const parts = [`${KEYS.pass}=${encodeURIComponent(passed)}`];
   if (req.query.verdict) parts.push(`verdict=${encodeURIComponent(String(req.query.verdict))}`);
   res.redirect(`/leads?${parts.join('&')}`);
+});
+
+// Настройки: сохранение и сброс (обычной ссылкой, без JS)
+app.get('/leads/settings/save', async (req, res) => {
+  const expected = process.env.ADMIN_TOKEN;
+  const passed = String(req.query[KEYS.pass] || '');
+  if (expected && passed !== expected) return res.status(401).send('Неверный токен');
+
+  try {
+    await require('./lib/settings').set(req.query);
+  } catch (error) {
+    console.warn(`⚠️ Настройки: ${error.message}`);
+  }
+
+  res.redirect(`/leads?tab=settings&saved=1&${KEYS.pass}=${encodeURIComponent(passed)}`);
+});
+
+app.get('/leads/settings/reset', async (req, res) => {
+  const expected = process.env.ADMIN_TOKEN;
+  const passed = String(req.query[KEYS.pass] || '');
+  if (expected && passed !== expected) return res.status(401).send('Неверный токен');
+
+  try {
+    await require('./lib/settings').reset();
+  } catch (error) {
+    console.warn(`⚠️ Сброс настроек: ${error.message}`);
+  }
+
+  res.redirect(`/leads?tab=settings&${KEYS.pass}=${encodeURIComponent(passed)}`);
 });
 
 // Разбор балла: из чего сложился рейтинг заказа
