@@ -251,7 +251,13 @@ function findColumn(string $reference): ?array
 
 // --- Проверка токена -------------------------------------------------
 
-if (!isset($_GET['token']) || !hash_equals((string) $creds['token'], (string) $_GET['token'])) {
+// Публичная проба: нужна, чтобы отличить блокировку запроса от блокировки по токену.
+if (isset($_GET['hello'])) {
+    respond(['ok' => true, 'hello' => true]);
+}
+
+$passed = $_GET['token'] ?? $_GET['key'] ?? null;
+if ($passed === null || !hash_equals((string) $creds['token'], (string) $passed)) {
     respond(['error' => 'Неверный токен'], 403);
 }
 
