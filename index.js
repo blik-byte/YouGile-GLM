@@ -742,7 +742,12 @@ async function start() {
 
   // Дайджест проектов Kwork: письма разбираются почтовым воркером,
   // отправка — раз в час (KWORK_DIGEST_INTERVAL_MS).
-  require('./lib/kwork-digest').startDigest({ notify: (message) => sendNotification(message) });
+  // Kwork по решению владельца выключен: площадка изменила правила.
+  // Включается только явной переменной KWORK_DIGEST_INTERVAL_MS.
+  require('./lib/kwork-digest').startDigest({
+    notify: (message) => sendNotification(message),
+    intervalMs: Number(process.env.KWORK_DIGEST_INTERVAL_MS || 0),
+  });
 
   // Сбор заказов FL.ru по RSS: каждые 20 минут (LEADS_FETCH_INTERVAL_MS).
   require('./lib/fl-monitor').startFlMonitor();

@@ -1,0 +1,18 @@
+{
+  "meta": {"rules_version": "1.1.0", "updated": "2026-11-13",
+    "changelog": [{"version": "1.1.0", "changes": [
+      "HF-07 вне профиля: разработка/вёрстка/дизайн/копирайтинг - отсев",
+      "FL-08 нет описания - спорно",
+      "hire_rate: демо-поле до подтверждения источника",
+      "пересчёт истории обновляет вердикты по порогу/FL-07 + сводка изменений",
+      "единая эффективная версия правил во всех местах UI"]}]},
+  "hard_filters_add": [{"id": "HF-07", "name": "out_of_profile",
+    "reason": "Вне профиля", "keywords": ["разработка сайта", "вёрстка", "лендинг на Tilda", "дизайн", "копирайтинг", "тексты для карточек"],
+    "llm": "Отсев, если основная задача не SEO-услуга из whitelist"}],
+  "flags_add": [{"id": "FL-08", "name": "no_description",
+    "reason": "Нет описания - объём работ не ясен, ручной разбор"}],
+  "client_schema": {"per_source": {
+    "fl": ["rating", "registered_year", "projects_count", "safe_deal"],
+    "kwork": ["name", "hire_rate_demo"]},
+    "hire_rate": {"status": "demo_only", "definition": null, "action": "подтвердить источник или удалить из прод-схемы"}}
+}
