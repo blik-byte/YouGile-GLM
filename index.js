@@ -356,7 +356,8 @@ app.get('/leads', async (req, res) => {
       health: state,
       sources: pageLib.buildSources(state),
       params: filters,
-      tab: req.query.tab === 'sources' ? 'sources' : 'feed',
+      rules: require('./lib/rules').loadRules(),
+      tab: req.query.tab === 'sources' ? 'sources' : req.query.tab === 'rules' ? 'rules' : 'feed',
     });
 
     res.type('html').send(html);
@@ -381,6 +382,25 @@ app.get('/leads/status', async (req, res) => {
   const parts = [`${KEYS.pass}=${encodeURIComponent(passed)}`];
   if (req.query.verdict) parts.push(`verdict=${encodeURIComponent(String(req.query.verdict))}`);
   res.redirect(`/leads?${parts.join('&')}`);
+});
+
+// Разбор балла: из чего сложился рейтинг заказа
+app.get('/leads/score', async (req, res) => {
+  const expected = process.env.ADMIN_TOKEN;
+  const passed = String(req.query[KEYS.pass] || '');
+  if (expected && passed !== expected) return res.status(401).send('Неверный токен');
+
+  try {
+    const store = require('./lib/leads-store');
+    const view = require('./lib/leads-view');
+    const lead = await store.getLead(String(req.query.id));
+    if (!lead) return res.status(404).type('text/plain; charset=utf-8').send('Заказ не найден');
+
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    res.type('html').send(view.renderScorePage(lead));
+  } catch (error) {
+    res.status(500).type('text/plain; charset=utf-8').send(error.message);
+  }
 });
 
 // Черновик отклика отдельной страницей: выделить и скопировать целиком
