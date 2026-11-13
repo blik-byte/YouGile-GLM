@@ -82,6 +82,30 @@ test('фактор свежести соответствует таблице', 
   assert.strictEqual(rules.freshnessFactor(100), 0.15);
 });
 
+test('категория вне профиля отсекается до весов', () => {
+  const cases = [
+    { title: 'Рассылка писем 350 шт через UNISENDER', category: 'Реклама и Маркетинг / Email-маркетинг' },
+    { title: 'Blur wheel in real time beamng drive 3d', category: 'Игры / Steam' },
+    { title: 'Закрытое тестирование 4 Android-приложений', category: 'Mobile / Приложения для Android' },
+    { title: 'Создать AI-Reels о коттеджном посёлке', category: 'Аудио/Видео/Фото / Вертикальные видео' },
+  ];
+
+  for (const item of cases) {
+    const result = rules.scoreOrder({ ...strong, ...item, description: 'Описание заказа на 200 символов, сайт и задача указаны, бюджет есть.' }, config);
+    assert.strictEqual(result.verdict, 'reject', `должен быть отклонён: ${item.title}`);
+    assert.ok(result.reasons.some((reason) => reason.id === 'HF-07'));
+  }
+});
+
+test('заказ без признаков SEO-услуги отклоняется', () => {
+  const result = rules.scoreOrder(
+    { ...strong, title: 'Поиск 2-3 клиентов на бухгалтерские услуги', category: '', description: 'Нужно найти клиентов, сайт есть, задача описана, бюджет 40 000 ₽.' },
+    config
+  );
+  assert.strictEqual(result.verdict, 'reject');
+  assert.ok(result.reasons.some((reason) => reason.text.includes('нет признаков SEO')));
+});
+
 test('сильный заказ проходит порог', () => {
   const result = rules.scoreOrder(strong, config);
   assert.strictEqual(result.verdict, 'accept', JSON.stringify(result.reasons));
