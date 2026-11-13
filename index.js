@@ -417,6 +417,26 @@ app.get('/leads/settings/reset', async (req, res) => {
   res.redirect(`/leads?tab=settings&${KEYS.pass}=${encodeURIComponent(passed)}`);
 });
 
+// Страница заказа: полное описание и действия, вместо модалки из макета
+app.get('/leads/card', async (req, res) => {
+  const expected = process.env.ADMIN_TOKEN;
+  const passed = String(req.query[KEYS.pass] || '');
+  if (expected && passed !== expected) return res.status(401).send('Неверный токен');
+
+  try {
+    const store = require('./lib/leads-store');
+    const view = require('./lib/leads-view');
+
+    const lead = await store.getLead(String(req.query.id));
+    if (!lead) return res.status(404).type('text/plain; charset=utf-8').send('Заказ не найден');
+
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    res.type('html').send(view.renderCardPage(lead, { [KEYS.pass]: passed }));
+  } catch (error) {
+    res.status(500).type('text/plain; charset=utf-8').send(error.message);
+  }
+});
+
 // Разбор балла: из чего сложился рейтинг заказа
 app.get('/leads/score', async (req, res) => {
   const expected = process.env.ADMIN_TOKEN;
