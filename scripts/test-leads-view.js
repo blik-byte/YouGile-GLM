@@ -69,7 +69,7 @@ test('пустая лента объясняет состояние источн
     params,
   });
 
-  assert.ok(html.includes('Заказов пока нет'));
+  assert.ok(html.includes('Пока нет заказов'));
   assert.ok(html.includes('HTTP 503'));
   assert.ok(html.includes('Собрать сейчас'));
 });
