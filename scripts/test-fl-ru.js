@@ -8,7 +8,7 @@
 
 const assert = require('assert');
 const fl = require('../lib/fl-ru');
-const { scoreLead } = require('../lib/leads-store');
+const health = require('../lib/source-health');
 
 const RSS = `<?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0"><channel>
@@ -62,13 +62,24 @@ test('бюджет вытаскивается из разных формулир
   assert.strictEqual(fl.parseBudget('без бюджета').budgetValue, 0);
 });
 
-test('приоритет растёт от бюджета, свежести и типа работ', () => {
-  const base = { labels: ['SEO'], budgetValue: 30000, publishedAt: new Date() };
-  const rich = scoreLead(base);
-  const poor = scoreLead({ labels: [], budgetValue: 0, publishedAt: new Date(Date.now() - 30 * 86400000) });
+test('здоровье источника: свежий успех — не авария, старый — авария', () => {
+  const now = new Date('2026-11-13T12:00:00Z');
 
-  assert.ok(rich > poor, `богатый ${rich} должен быть выше бедного ${poor}`);
-  assert.ok(rich <= 100 && poor >= 0);
+  const fresh = health.describe(
+    { source: 'fl', lastSuccessAt: new Date('2026-11-13T11:00:00Z'), lastAttemptAt: now, consecutiveFailures: 0, lastCount: 60 },
+    { downAlertHours: 6, now }
+  );
+  assert.strictEqual(fresh.down, false);
+  assert.strictEqual(fresh.hoursSinceSuccess, 1);
+
+  const stale = health.describe(
+    { source: 'fl', lastSuccessAt: new Date('2026-11-13T02:00:00Z'), lastAttemptAt: now, consecutiveFailures: 3 },
+    { downAlertHours: 6, now }
+  );
+  assert.strictEqual(stale.down, true);
+
+  const never = health.describe({ source: 'fl' }, { downAlertHours: 6, now });
+  assert.strictEqual(never.down, true, 'без единого успеха источник считается лежащим');
 });
 
 test('битый XML не роняет разбор', () => {

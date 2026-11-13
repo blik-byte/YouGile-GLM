@@ -231,6 +231,72 @@ app.get('/api/steward/edit', async (req, res) => {
   }
 });
 
+/* ------------------------------------------------------------------ */
+/* Лента заказов: API                                                       */
+/* ------------------------------------------------------------------ */
+
+// Список с фильтрами и пагинацией
+app.get('/api/leads', requireAdmin, async (req, res) => {
+  try {
+    const store = require('./lib/leads-store');
+    const data = await store.listLeads({
+      verdict: req.query.verdict,
+      status: req.query.status,
+      source: req.query.source,
+      q: req.query.q,
+      sort: req.query.sort,
+      limit: req.query.limit,
+      offset: req.query.offset,
+    });
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Счётчики для шапки
+app.get('/api/leads/stats', requireAdmin, async (req, res) => {
+  try {
+    const store = require('./lib/leads-store');
+    res.json(await store.leadsStats());
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Здоровье источника — для баннера
+app.get('/api/leads/health', requireAdmin, async (req, res) => {
+  try {
+    const health = require('./lib/source-health');
+    const hours = Number(req.query.hours) || 6;
+    res.json(await health.getHealth('fl', { downAlertHours: hours }));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Кнопка «Собрать сейчас»
+app.post('/api/leads/fetch', requireAdmin, async (req, res) => {
+  try {
+    const { collectOnce } = require('./lib/fl-monitor');
+    const stats = await collectOnce({ logger: console });
+    if (!stats) return res.status(502).json({ error: 'Источник недоступен, попытка записана' });
+    res.json({ ok: true, ...stats });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Смена статуса, заметка, черновик
+app.patch('/api/leads/:id', requireAdmin, async (req, res) => {
+  try {
+    const store = require('./lib/leads-store');
+    res.json({ ok: true, ...(await store.updateLead(req.params.id, req.body || {})) });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 // Состояние интеграции с MODX: доступен ли коннектор и в каком он режиме
 app.get('/api/modx/status', requireAdmin, async (req, res) => {
   try {
