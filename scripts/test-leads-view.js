@@ -80,6 +80,40 @@ test('опасные символы в заголовке экранируютс
   assert.ok(html.includes('&lt;script&gt;'));
 });
 
+test('бейдж «Горячий» зависит от настроек', () => {
+  const hot = view.renderPage({
+    orders: [{ ...order, score: 90 }],
+    stats: {},
+    health: {},
+    sources: [],
+    params,
+    settings: { hotScore: 80, hotAgeHours: 2, followUpDays: 3 },
+  });
+  assert.ok(hot.includes('Горячий'));
+
+  const cold = view.renderPage({
+    orders: [{ ...order, score: 90 }],
+    stats: {},
+    health: {},
+    sources: [],
+    params,
+    settings: { hotScore: 95, hotAgeHours: 2, followUpDays: 3 },
+  });
+  assert.ok(!cold.includes('Горячий'));
+});
+
+test('ожидание ответа подсвечивается после N дней', () => {
+  const html = view.renderPage({
+    orders: [{ ...order, status: 'applied', updatedAt: new Date(Date.now() - 5 * 86400000) }],
+    stats: {},
+    health: {},
+    sources: [],
+    params,
+    settings: { hotScore: 80, hotAgeHours: 2, followUpDays: 3 },
+  });
+  assert.ok(html.includes('ждёт ответа'));
+});
+
 test('страница закрыта от индексации', () => {
   const html = view.renderPage({ orders: [], stats: {}, health: {}, sources: [], params });
   assert.ok(html.includes('noindex'));

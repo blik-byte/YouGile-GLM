@@ -336,13 +336,13 @@ app.get('/leads', async (req, res) => {
     // Имя параметра собираем по частям: иначе защита видит «ключ = значение».
     filters['tok' + 'en'] = passed;
 
+    const settings = await require('./lib/settings').get();
+
     const [{ items }, stats, state] = await Promise.all([
       store.listLeads({ verdict: filters.verdict, status: filters.status, q: filters.q, sort: filters.sort, limit: 60 }),
       store.leadsStats(),
-      health.getHealth('fl', { downAlertHours: Number(process.env.SOURCE_DOWN_HOURS) || 6 }),
+      health.getHealth('fl', { downAlertHours: Number(settings.sourceDownHours) || 6 }),
     ]);
-
-    const settings = await require('./lib/settings').get();
 
     // Черновик отклика — только для тех, что подходят
     const reply = require('./lib/kwork-reply');
