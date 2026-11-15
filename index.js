@@ -370,6 +370,21 @@ app.get('/leads', async (req, res) => {
   }
 });
 
+// Отложить заказ на день
+app.get('/leads/snooze', async (req, res) => {
+  const expected = process.env.ADMIN_TOKEN;
+  const passed = String(req.query[KEYS.pass] || '');
+  if (expected && passed !== expected) return res.status(401).send('Неверный токен');
+
+  try {
+    await require('./lib/leads-store').snoozeLead(String(req.query.id), Number(req.query.days) || 1);
+  } catch (error) {
+    console.warn(`⚠️ Отложить: ${error.message}`);
+  }
+
+  res.redirect(`/leads?${KEYS.pass}=${encodeURIComponent(passed)}`);
+});
+
 // Смена статуса заказа: обычной ссылкой из карточки, без клиентского JS
 app.get('/leads/status', async (req, res) => {
   const expected = process.env.ADMIN_TOKEN;
