@@ -370,6 +370,21 @@ app.get('/leads', async (req, res) => {
   }
 });
 
+// Ручная правка вердикта
+app.get('/leads/mark', async (req, res) => {
+  const expected = process.env.ADMIN_TOKEN;
+  const passed = String(req.query[KEYS.pass] || '');
+  if (expected && passed !== expected) return res.status(401).send('Неверный токен');
+
+  try {
+    await require('./lib/leads-store').markVerdict(String(req.query.id), String(req.query.to));
+  } catch (error) {
+    console.warn(`⚠️ Разметка: ${error.message}`);
+  }
+
+  res.redirect(`/leads?${KEYS.pass}=${encodeURIComponent(passed)}`);
+});
+
 // Отложить заказ на день
 app.get('/leads/snooze', async (req, res) => {
   const expected = process.env.ADMIN_TOKEN;
